@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light;
+  --ink: #1e2723;
+  --muted: #65726b;
+  --paper: #f8f6ef;
+  --card: #fffdf8;
+  --line: #ddd9cc;
+  --accent: #b84c2c;
+  --accent-dark: #91391f;
+  font-family: Arial, "Noto Sans Hebrew", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.topbar {
+  padding: 20px clamp(24px, 7vw, 96px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 248, .85);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: white;
+  border-radius: 9px 9px 4px 4px;
+  background: var(--accent);
+}
+
+main { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+
+.hero { padding: clamp(64px, 10vw, 112px) 0 64px; }
+.eyebrow { margin: 0 0 10px; color: var(--accent); font-size: .85rem; font-weight: 700; letter-spacing: .05em; }
+h1 { max-width: 680px; margin: 0; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: .98; letter-spacing: -.04em; }
+.hero > p:not(.eyebrow) { margin: 24px 0 30px; color: var(--muted); font-size: 1.1rem; }
+
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+
+.primary-button, .secondary-button {
+  min-height: 46px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 700;
+}
+.primary-button { color: white; background: var(--accent); }
+.primary-button:hover { background: var(--accent-dark); }
+.secondary-button { color: var(--ink); border-color: var(--line); background: transparent; }
+
+.folders-section { padding-bottom: 80px; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+.section-heading h2 { margin: 0; font-size: 1.4rem; }
+.section-heading span { color: var(--muted); font-size: .9rem; }
+.folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+
+.folder-card {
+  display: grid;
+  min-height: 210px;
+  padding: 24px;
+  text-align: right;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--card);
+  transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.folder-card:hover, .folder-card.selected { transform: translateY(-2px); border-color: var(--accent); box-shadow: 0 12px 30px rgba(56, 44, 30, .08); }
+.folder-icon { color: var(--accent); font-size: 2rem; }
+.folder-card strong { align-self: end; font-size: 1.2rem; }
+.folder-card .description { margin-top: 7px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-card .updated { margin-top: 20px; color: var(--muted); font-size: .78rem; }
+
+.empty-state { padding: 48px 24px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
+.empty-state h3 { margin: 10px 0 6px; }
+.empty-state p { margin: 0; color: var(--muted); }
+.empty-icon { color: var(--accent); font-size: 2.5rem; }
+
+dialog { width: min(520px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); background: var(--card); box-shadow: 0 24px 80px rgba(30, 39, 35, .25); }
+dialog::backdrop { background: rgba(30, 39, 35, .52); }
+dialog form { display: grid; padding: 28px; }
+.dialog-heading { display: flex; align-items: start; justify-content: space-between; margin-bottom: 24px; }
+.dialog-heading h2 { margin: 0; font-size: 1.7rem; }
+.icon-button { padding: 0; border: 0; color: var(--muted); background: none; font-size: 1.8rem; }
+label { margin: 15px 0 7px; font-weight: 700; }
+label span { color: var(--muted); font-size: .8rem; font-weight: 400; }
+input, textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+input:focus, textarea:focus { outline: 2px solid rgba(184, 76, 44, .25); border-color: var(--accent); }
+textarea { resize: vertical; }
+.error { min-height: 1.2em; margin: 10px 0 0; color: #a2281c; font-size: .88rem; }
+.dialog-actions { display: flex; justify-content: end; gap: 10px; margin-top: 16px; }
+
+@media (max-width: 600px) {
+  main { width: min(100% - 28px, 1080px); }
+  .topbar { padding-inline: 14px; }
+  .hero { padding-top: 52px; }
+  .folder-card { min-height: 180px; }
+}
