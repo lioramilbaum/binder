@@ -3,13 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.binder.app import FolderStore
+from src.binder.folders import Folders
 
 
-class FolderStoreTests(unittest.TestCase):
+class FoldersTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.store = FolderStore(Path(self.temp_dir.name) / "folders.json")
+        self.store = Folders(Path(self.temp_dir.name) / "folders.json")
 
     def tearDown(self):
         self.temp_dir.cleanup()
