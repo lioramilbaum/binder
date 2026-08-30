@@ -1,26 +1,32 @@
 # Binder
 
-MVP קטן לניהול תיקיות מידע. הממשק בעברית ומותאם לכתיבה מימין לשמאל.
+A small MVP for managing information folders. The user interface is in Hebrew
+and supports right-to-left text.
 
-## הפעלה
+## Running the application
 
-נדרש Python 3.9 ומעלה. אין צורך בהתקנת חבילות.
+Python 3.9 or later is required. No external packages need to be installed.
 
 ```bash
 python3 -m src.binder.app
 ```
 
-לאחר מכן פותחים בדפדפן את [http://localhost:8000](http://localhost:8000).
+Then open [http://localhost:8000](http://localhost:8000) in a browser.
 
-התיקיות נשמרות כברירת מחדל בקובץ `data/folders.json`. ניתן לשנות את מיקום
-האחסון באמצעות משתנה הסביבה `BINDER_DATA_DIR`, למשל לתיקייה שמסונכרנת עם
-Google Drive:
+By default, folders are stored in `data/folders.json`. The storage location can
+be changed with the `BINDER_DATA_DIR` environment variable—for example, to use
+a directory synchronized with Google Drive:
 
 ```bash
 BINDER_DATA_DIR="/path/to/Google Drive/Binder" python3 -m src.binder.app
 ```
 
-## בדיקות
+Each document is stored as a separate JSON file under
+`data/documents/<folder-id>/`, with its attachments stored alongside it. The
+entire `data/` directory is ignored by Git, so personal folders, documents, and
+uploaded files are never included in commits.
+
+## Running the tests
 
 ```bash
 python3 -m unittest discover -s tests

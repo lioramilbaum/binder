@@ -47,7 +47,10 @@
         <section class="documents-section" aria-labelledby="documents-heading">
           <div class="section-heading">
             <h2 id="documents-heading">מסמכים</h2>
-            <span id="document-count"></span>
+            <div class="section-actions">
+              <span id="document-count"></span>
+              <button class="primary-button small-button" id="new-document-button" type="button">+ מסמך חדש</button>
+            </div>
           </div>
           <div id="documents" class="document-list" aria-live="polite"></div>
           <div id="documents-empty-state" class="empty-state" hidden>
@@ -76,6 +79,74 @@
         <div class="dialog-actions">
           <button class="secondary-button" id="cancel-dialog" type="button">ביטול</button>
           <button class="primary-button" type="submit">יצירת תיקייה</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="document-dialog">
+      <form id="document-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">מסמך חדש</p>
+            <h2>הוספת מידע לתיקייה</h2>
+          </div>
+          <button class="icon-button" id="close-document-dialog" type="button" aria-label="סגירה">×</button>
+        </div>
+        <div class="date-time-fields">
+          <div>
+            <label for="document-date">תאריך</label>
+            <input id="document-date" name="date" type="date" required>
+          </div>
+          <div>
+            <label for="document-time">שעה <span>(לא חובה)</span></label>
+            <input id="document-time" name="time" type="time">
+          </div>
+        </div>
+        <label for="document-name">שם המסמך</label>
+        <input id="document-name" name="name" maxlength="200" required placeholder="לדוגמה: שיחת WhatsApp עם דני">
+        <label for="document-description">תיאור קצר <span>(לא חובה)</span></label>
+        <textarea id="document-description" name="description" maxlength="1000" rows="2" placeholder="הקשר או הערה על המסמך"></textarea>
+        <label for="document-content">תוכן</label>
+        <textarea id="document-content" class="content-input" name="content" rows="10" placeholder="אפשר להקליד או להדביק כאן שיחה, מסמך או כל תוכן אחר"></textarea>
+        <label for="document-files">קבצים <span>(לא חובה, עד 50MB יחד)</span></label>
+        <div class="file-drop-zone" id="document-file-drop-zone" role="button" tabindex="0">
+          <input id="document-files" name="files" type="file" multiple hidden>
+          <strong>גררו קבצים לכאן</strong>
+          <span>או לחצו לבחירת תמונות וקבצים</span>
+          <div class="selected-files" id="document-selected-files"></div>
+        </div>
+        <p class="field-hint">אפשר גם להדביק תמונה ישירות בשדה התוכן.</p>
+        <p id="document-form-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-document-dialog" type="button">ביטול</button>
+          <button class="primary-button" type="submit">שמירת מסמך</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="content-dialog">
+      <form id="content-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">עריכת מסמך</p>
+            <h2 id="content-dialog-title">עריכת תוכן</h2>
+          </div>
+          <button class="icon-button" id="close-content-dialog" type="button" aria-label="סגירה">×</button>
+        </div>
+        <label for="existing-document-content">תוכן המסמך</label>
+        <textarea id="existing-document-content" class="content-input" name="content" rows="14"></textarea>
+        <label for="existing-document-files">קבצים נוספים <span>(לא חובה, עד 50MB יחד)</span></label>
+        <div class="file-drop-zone" id="existing-file-drop-zone" role="button" tabindex="0">
+          <input id="existing-document-files" name="files" type="file" multiple hidden>
+          <strong>גררו קבצים לכאן</strong>
+          <span>או לחצו לבחירת תמונות וקבצים</span>
+          <div class="selected-files" id="existing-selected-files"></div>
+        </div>
+        <p class="field-hint">אפשר גם להדביק תמונה ישירות בשדה התוכן.</p>
+        <p id="content-form-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-content-dialog" type="button">ביטול</button>
+          <button class="primary-button" type="submit">שמירת תוכן</button>
         </div>
       </form>
     </dialog>
