@@ -305,7 +305,7 @@ function showHome(updateHash = true) {
   currentFolderId = null;
   folderView.hidden = true;
   homeView.hidden = false;
-  document.title = "Binder — התיקיות שלי";
+  document.title = "Binder — ניהול מידע";
   if (updateHash) history.pushState(null, "", window.location.pathname);
 }
 

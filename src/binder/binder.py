@@ -42,6 +42,9 @@ class Binder(BaseHTTPRequestHandler):
         if path == "/styles.css":
             self._send_file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
             return
+        if path == "/favicon.svg":
+            self._send_file(STATIC_DIR / "favicon.svg", "image/svg+xml")
+            return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
