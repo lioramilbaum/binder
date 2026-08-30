@@ -99,12 +99,16 @@ class Binder(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
-        if not isinstance(payload, dict) or "content" not in payload:
-            self._send_json({"error": "חסר תוכן לשמירה"}, HTTPStatus.BAD_REQUEST)
+        if not isinstance(payload, dict):
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
-        document = self.store.update_document_content(
-            parts[2], parts[4], str(payload["content"])
-        )
+        if "content" in payload:
+            document = self.store.update_document_content(
+                parts[2], parts[4], str(payload["content"])
+            )
+        else:
+            self._send_json({"error": "לא נמצאו שינויים לשמירה"}, HTTPStatus.BAD_REQUEST)
+            return
         if document is None:
             self._send_json({"error": "המסמך לא נמצא"}, HTTPStatus.NOT_FOUND)
             return

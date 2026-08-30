@@ -26,6 +26,11 @@ Each document is stored as a separate JSON file under
 entire `data/` directory is ignored by Git, so personal folders, documents, and
 uploaded files are never included in commits.
 
+WhatsApp chat exports in `.txt` or `.zip` format are detected automatically
+when attached to a document. Binder preserves the original export and renders
+the parsed messages as a chat conversation. Android and iPhone export formats
+can vary by locale, so the original file remains the authoritative source.
+
 ## Running the tests
 
 ```bash

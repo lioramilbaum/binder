@@ -142,6 +142,19 @@ class FoldersTests(unittest.TestCase):
             self.store.update_document_content(folder["id"], "missing", "תוכן")
         )
 
+    def test_imports_whatsapp_chat_from_attachment(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "WhatsApp")
+        chat = "30/08/2026, 14:35 - דנה: אפשר לדבר?".encode()
+
+        self.store.add_files(
+            folder["id"], document["id"], [("chat.txt", "text/plain", chat)]
+        )
+
+        saved = self.store.get(folder["id"])["documents"][0]
+        self.assertEqual(saved["whatsapp_chat"]["messages"][0]["sender"], "דנה")
+
+
 
 if __name__ == "__main__":
     unittest.main()

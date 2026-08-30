@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from .config import STORE_PATH
 from .document import Document
+from .whatsapp import WhatsAppChat
 
 
 class Folders:
@@ -96,6 +97,7 @@ class Folders:
             return None
 
         saved_files = []
+        imported_chat = None
         for filename, content_type, content in uploads:
             file_id = str(uuid4())
             suffix = Path(filename).suffix[:16]
@@ -112,8 +114,12 @@ class Folders:
                     "stored_name": stored_name,
                 }
             )
+            if imported_chat is None:
+                imported_chat = WhatsAppChat.from_file(filename, content)
 
         document.setdefault("files", []).extend(saved_files)
+        if imported_chat is not None:
+            document["whatsapp_chat"] = imported_chat.to_dict()
         document["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._write_document(folder_id, document)
         return saved_files

@@ -175,9 +175,13 @@ function renderDocuments(documents) {
       description.textContent = documentItem.description;
       body.append(description);
     }
-    const content = document.createElement("pre");
-    content.textContent = documentItem.content || "אין תוכן במסמך.";
-    body.append(content);
+    if (documentItem.whatsapp_chat?.messages?.length) {
+      body.append(renderWhatsAppChat(documentItem.whatsapp_chat));
+    } else {
+      const content = document.createElement("pre");
+      content.textContent = documentItem.content || "אין תוכן במסמך.";
+      body.append(content);
+    }
     const editButton = document.createElement("button");
     editButton.className = "secondary-button edit-content-button";
     editButton.type = "button";
@@ -217,6 +221,66 @@ function renderDocuments(documents) {
     item.append(summary, body);
     documentsElement.append(item);
   }
+}
+
+function renderWhatsAppChat(chat) {
+  const wrapper = document.createElement("div");
+  const conversation = document.createElement("div");
+  conversation.className = "whatsapp-chat";
+  let previousDate = null;
+
+  for (const message of chat.messages) {
+    if (message.date !== previousDate) {
+      const dateSeparator = document.createElement("div");
+      dateSeparator.className = "chat-date";
+      dateSeparator.textContent = message.date;
+      conversation.append(dateSeparator);
+      previousDate = message.date;
+    }
+    if (message.system) {
+      const system = document.createElement("div");
+      system.className = "chat-system-message";
+      system.textContent = message.content;
+      conversation.append(system);
+      continue;
+    }
+    const row = document.createElement("div");
+    const ownerName = chat.me || "Liora Milbaum";
+    row.className = `chat-message-row ${message.sender === ownerName ? "mine" : "theirs"}`;
+    const bubble = document.createElement("div");
+    bubble.className = "chat-bubble";
+    const sender = document.createElement("strong");
+    sender.textContent = message.sender;
+    const content = document.createElement("p");
+    appendLinkifiedText(content, message.content);
+    const time = document.createElement("time");
+    time.textContent = message.time;
+    bubble.append(sender, content, time);
+    row.append(bubble);
+    conversation.append(row);
+  }
+  wrapper.append(conversation);
+  return wrapper;
+}
+
+function appendLinkifiedText(element, text) {
+  const linkPattern = /(?:https?:\/\/|www\.)[^\s<>]+/gi;
+  let cursor = 0;
+  for (const match of text.matchAll(linkPattern)) {
+    element.append(document.createTextNode(text.slice(cursor, match.index)));
+    const trailingMatch = match[0].match(/[.,!?;:)}\]]+$/);
+    const trailing = trailingMatch ? trailingMatch[0] : "";
+    const linkText = trailing ? match[0].slice(0, -trailing.length) : match[0];
+    const link = document.createElement("a");
+    link.href = linkText.startsWith("www.") ? `https://${linkText}` : linkText;
+    link.textContent = linkText;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    element.append(link);
+    if (trailing) element.append(document.createTextNode(trailing));
+    cursor = match.index + match[0].length;
+  }
+  element.append(document.createTextNode(text.slice(cursor)));
 }
 
 async function openFolder(folderId, updateHash = true) {
