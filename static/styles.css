@@ -46,10 +46,13 @@ body {
 
 main { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
 
-.hero { padding: clamp(64px, 10vw, 112px) 0 64px; }
+.hero, .folder-hero { padding: clamp(64px, 10vw, 112px) 0 64px; }
 .eyebrow { margin: 0 0 10px; color: var(--accent); font-size: .85rem; font-weight: 700; letter-spacing: .05em; }
 h1 { max-width: 680px; margin: 0; font-size: clamp(2.5rem, 6vw, 5.5rem); line-height: .98; letter-spacing: -.04em; }
 .hero > p:not(.eyebrow) { margin: 24px 0 30px; color: var(--muted); font-size: 1.1rem; }
+.folder-hero > p:last-child { max-width: 680px; margin: 20px 0 0; color: var(--muted); font-size: 1.1rem; }
+.back-button { margin-bottom: 48px; padding: 0; border: 0; color: var(--muted); background: none; }
+.back-button:hover { color: var(--accent); }
 
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -65,7 +68,7 @@ button { cursor: pointer; }
 .primary-button:hover { background: var(--accent-dark); }
 .secondary-button { color: var(--ink); border-color: var(--line); background: transparent; }
 
-.folders-section { padding-bottom: 80px; }
+.folders-section, .documents-section { padding-bottom: 80px; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
 .section-heading h2 { margin: 0; font-size: 1.4rem; }
 .section-heading span { color: var(--muted); font-size: .9rem; }
@@ -92,6 +95,11 @@ button { cursor: pointer; }
 .empty-state h3 { margin: 10px 0 6px; }
 .empty-state p { margin: 0; color: var(--muted); }
 .empty-icon { color: var(--accent); font-size: 2.5rem; }
+.document-empty-icon { font-size: 2rem; }
+.document-list { display: grid; gap: 10px; }
+.document-item { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.document-item h3 { margin: 0; font-size: 1rem; }
+.document-item span { color: var(--muted); font-size: .8rem; }
 
 dialog { width: min(520px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); background: var(--card); box-shadow: 0 24px 80px rgba(30, 39, 35, .25); }
 dialog::backdrop { background: rgba(30, 39, 35, .52); }

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -20,7 +21,7 @@ class FolderStore:
     def __init__(self, path: Path = STORE_PATH):
         self.path = path
 
-    def list(self) -> list[dict[str, str]]:
+    def list(self) -> list[dict[str, object]]:
         if not self.path.exists():
             return []
         try:
@@ -29,7 +30,14 @@ class FolderStore:
             return []
         return sorted(data, key=lambda folder: folder["updated_at"], reverse=True)
 
-    def create(self, name: str, description: str = "") -> dict[str, str]:
+    def get(self, folder_id: str) -> Optional[dict[str, object]]:
+        for folder in self.list():
+            if folder["id"] == folder_id:
+                folder.setdefault("documents", [])
+                return folder
+        return None
+
+    def create(self, name: str, description: str = "") -> dict[str, object]:
         folders = self.list()
         now = datetime.now(timezone.utc).isoformat()
         folder = {
@@ -38,6 +46,7 @@ class FolderStore:
             "description": description.strip(),
             "created_at": now,
             "updated_at": now,
+            "documents": [],
         }
         folders.append(folder)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +65,14 @@ class BinderHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/folders":
             self._send_json(self.store.list())
+            return
+        if path.startswith("/api/folders/"):
+            folder_id = path.removeprefix("/api/folders/")
+            folder = self.store.get(folder_id)
+            if folder is None:
+                self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
+                return
+            self._send_json(folder)
             return
         if path == "/":
             self._send_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")

@@ -15,25 +15,48 @@
     </header>
 
     <main>
-      <section class="hero">
-        <p class="eyebrow">מרחב העבודה שלך</p>
-        <h1>על איזו תיקייה עובדים?</h1>
-        <p>כל המידע החשוב, מסודר במקום אחד.</p>
-        <button class="primary-button" id="new-folder-button" type="button">+ תיקייה חדשה</button>
-      </section>
+      <div id="home-view">
+        <section class="hero">
+          <p class="eyebrow">מרחב העבודה שלך</p>
+          <h1>על איזו תיקייה עובדים?</h1>
+          <p>כל המידע החשוב, מסודר במקום אחד.</p>
+          <button class="primary-button" id="new-folder-button" type="button">+ תיקייה חדשה</button>
+        </section>
 
-      <section class="folders-section" aria-labelledby="folders-heading">
-        <div class="section-heading">
-          <h2 id="folders-heading">התיקיות שלי</h2>
-          <span id="folder-count"></span>
-        </div>
-        <div id="folders" class="folder-grid" aria-live="polite"></div>
-        <div id="empty-state" class="empty-state" hidden>
-          <div class="empty-icon" aria-hidden="true">⌑</div>
-          <h3>עדיין אין כאן תיקיות</h3>
-          <p>צרו את התיקייה הראשונה והתחילו לאסוף מידע.</p>
-        </div>
-      </section>
+        <section class="folders-section" aria-labelledby="folders-heading">
+          <div class="section-heading">
+            <h2 id="folders-heading">התיקיות שלי</h2>
+            <span id="folder-count"></span>
+          </div>
+          <div id="folders" class="folder-grid" aria-live="polite"></div>
+          <div id="empty-state" class="empty-state" hidden>
+            <div class="empty-icon" aria-hidden="true">⌑</div>
+            <h3>עדיין אין כאן תיקיות</h3>
+            <p>צרו את התיקייה הראשונה והתחילו לאסוף מידע.</p>
+          </div>
+        </section>
+      </div>
+
+      <div id="folder-view" hidden>
+        <section class="folder-hero">
+          <button class="back-button" id="back-button" type="button">→ חזרה לתיקיות</button>
+          <p class="eyebrow">תיקייה</p>
+          <h1 id="current-folder-name"></h1>
+          <p id="current-folder-description"></p>
+        </section>
+        <section class="documents-section" aria-labelledby="documents-heading">
+          <div class="section-heading">
+            <h2 id="documents-heading">מסמכים</h2>
+            <span id="document-count"></span>
+          </div>
+          <div id="documents" class="document-list" aria-live="polite"></div>
+          <div id="documents-empty-state" class="empty-state" hidden>
+            <div class="empty-icon document-empty-icon" aria-hidden="true">▤</div>
+            <h3>עדיין אין מסמכים בתיקייה</h3>
+            <p>כאן תופיע רשימת המסמכים שתוסיפו לתיקייה.</p>
+          </div>
+        </section>
+      </div>
     </main>
 
     <dialog id="folder-dialog">
