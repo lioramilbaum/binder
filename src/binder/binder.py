@@ -1,20 +1,22 @@
 import json
 from datetime import date, time
 from email import policy
+from email.message import Message
 from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Optional
+from tempfile import TemporaryFile
+from typing import BinaryIO, Optional
 from urllib.parse import urlparse
 
-from .config import STATIC_DIR
+from .config import MAX_UPLOAD_SIZE, STATIC_DIR
 from .folders import Folders
 
 
 class Binder(BaseHTTPRequestHandler):
     store = Folders()
-    max_upload_size = 50 * 1024 * 1024
+    max_upload_size = MAX_UPLOAD_SIZE
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -159,8 +161,10 @@ class Binder(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if length <= 0 or length > self.max_upload_size:
+            limit_mb = self.max_upload_size // (1024 * 1024)
             self._send_json(
-                {"error": "הקבצים חורגים ממגבלת 50MB"}, HTTPStatus.BAD_REQUEST
+                {"error": f"הקבצים חורגים ממגבלת {limit_mb}MB"},
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
             )
             return
         content_type = self.headers.get("Content-Type", "")
@@ -168,26 +172,96 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json({"error": "בקשת העלאה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
 
-        body = self.rfile.read(length)
-        message = BytesParser(policy=policy.default).parsebytes(
-            f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode()
-            + body
-        )
-        uploads = []
-        for part in message.iter_parts():
-            filename = part.get_filename()
-            if filename:
-                uploads.append(
-                    (filename, part.get_content_type(), part.get_payload(decode=True) or b"")
-                )
+        uploads = self._read_multipart_uploads(content_type, length)
         if not uploads:
             self._send_json({"error": "לא נבחרו קבצים"}, HTTPStatus.BAD_REQUEST)
             return
-        saved = self.store.add_files(folder_id, document_id, uploads)
+        try:
+            saved = self.store.add_files(folder_id, document_id, uploads)
+        finally:
+            for _, _, upload in uploads:
+                upload.close()
         if saved is None:
             self._send_json({"error": "המסמך לא נמצא"}, HTTPStatus.NOT_FOUND)
             return
         self._send_json(saved, HTTPStatus.CREATED)
+
+    def _read_multipart_uploads(
+        self, content_type: str, length: int
+    ) -> list[tuple[str, str, BinaryIO]]:
+        content_type_header = Message()
+        content_type_header["content-type"] = content_type
+        boundary = content_type_header.get_param("boundary", header="content-type")
+        if not boundary:
+            return []
+
+        marker = b"--" + str(boundary).encode("utf-8")
+        closing_marker = marker + b"--"
+        remaining = length
+
+        def read_line(limit: int = 1024 * 1024) -> bytes:
+            nonlocal remaining
+            if remaining <= 0:
+                return b""
+            chunk = self.rfile.readline(min(limit, remaining))
+            remaining -= len(chunk)
+            return chunk
+
+        if read_line().rstrip(b"\r\n") != marker:
+            return []
+
+        uploads = []
+        while remaining > 0:
+            header_lines = []
+            header_size = 0
+            while True:
+                line = read_line(64 * 1024)
+                if not line or line in (b"\r\n", b"\n"):
+                    break
+                header_size += len(line)
+                if header_size > 64 * 1024:
+                    for _, _, upload in uploads:
+                        upload.close()
+                    return []
+                header_lines.append(line)
+
+            headers = BytesParser(policy=policy.default).parsebytes(
+                b"".join(header_lines) + b"\r\n"
+            )
+            filename = headers.get_filename()
+            upload = TemporaryFile() if filename else None
+            previous = b""
+            boundary_line = b""
+            while remaining > 0:
+                line = read_line()
+                stripped = line.rstrip(b"\r\n")
+                if stripped in (marker, closing_marker):
+                    if upload is not None:
+                        upload.write(previous.removesuffix(b"\r\n"))
+                        upload.seek(0)
+                    boundary_line = stripped
+                    break
+                if upload is not None:
+                    upload.write(previous)
+                previous = line
+
+            if filename and upload is not None:
+                uploads.append(
+                    (
+                        filename,
+                        headers.get_content_type(),
+                        upload,
+                    )
+                )
+            elif upload is not None:
+                upload.close()
+            if boundary_line == closing_marker:
+                break
+            if not boundary_line:
+                for _, _, pending_upload in uploads:
+                    pending_upload.close()
+                return []
+        return uploads
 
     def _send_attachment(
         self, folder_id: str, document_id: str, file_id: str

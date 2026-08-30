@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import BinaryIO, Optional, Union
 from uuid import uuid4
 
 from .config import STORE_PATH
@@ -80,7 +81,7 @@ class Folders:
         self,
         folder_id: str,
         document_id: str,
-        uploads: list[tuple[str, str, bytes]],
+        uploads: list[tuple[str, str, Union[bytes, BinaryIO]]],
     ) -> Optional[list[dict[str, object]]]:
         folder = self.get(folder_id)
         if folder is None:
@@ -104,18 +105,24 @@ class Folders:
             stored_name = f"{file_id}{suffix}"
             attachment_path = self._attachments_path(folder_id, document_id) / stored_name
             attachment_path.parent.mkdir(parents=True, exist_ok=True)
-            attachment_path.write_bytes(content)
+            if isinstance(content, bytes):
+                attachment_path.write_bytes(content)
+            else:
+                content.seek(0)
+                with attachment_path.open("wb") as destination:
+                    shutil.copyfileobj(content, destination, length=1024 * 1024)
+            size = attachment_path.stat().st_size
             saved_files.append(
                 {
                     "id": file_id,
                     "name": Path(filename).name,
                     "content_type": content_type or "application/octet-stream",
-                    "size": len(content),
+                    "size": size,
                     "stored_name": stored_name,
                 }
             )
             if imported_chat is None:
-                imported_chat = WhatsAppChat.from_file(filename, content)
+                imported_chat = WhatsAppChat.from_path(filename, attachment_path)
 
         document.setdefault("files", []).extend(saved_files)
         if imported_chat is not None:

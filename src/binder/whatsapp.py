@@ -44,6 +44,43 @@ class WhatsAppChat:
         )
         return cls(messages=messages, participants=participants)
 
+    @classmethod
+    def from_path(cls, filename: str, path: Path) -> Optional["WhatsAppChat"]:
+        suffix = Path(filename).suffix.lower()
+        if suffix == ".txt":
+            if path.stat().st_size > 10 * 1024 * 1024:
+                return None
+            return cls.from_file(filename, path.read_bytes())
+        if suffix != ".zip":
+            return None
+        try:
+            with zipfile.ZipFile(path) as archive:
+                candidates = [
+                    item
+                    for item in archive.infolist()
+                    if item.filename.lower().endswith(".txt")
+                    and item.file_size <= 10 * 1024 * 1024
+                ]
+                if not candidates:
+                    return None
+                chat_file = min(candidates, key=lambda item: item.file_size)
+                text = cls._decode(archive.read(chat_file))
+        except (OSError, zipfile.BadZipFile):
+            return None
+        if text is None:
+            return None
+        messages = cls._parse_messages(text)
+        if not messages:
+            return None
+        participants = list(
+            dict.fromkeys(
+                str(message["sender"])
+                for message in messages
+                if message.get("sender")
+            )
+        )
+        return cls(messages=messages, participants=participants)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "messages": self.messages,

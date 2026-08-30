@@ -21,6 +21,15 @@ a directory synchronized with Google Drive:
 BINDER_DATA_DIR="/path/to/Google Drive/Binder" python3 -m src.binder.app
 ```
 
+Uploads are streamed to disk and may be up to 2 GB by default. Set
+`BINDER_MAX_UPLOAD_MB` to change the maximum request size, for example:
+
+```bash
+BINDER_MAX_UPLOAD_MB=4096 python3 -m src.binder.app
+```
+
+The limit applies to the combined size of all files selected in one upload.
+
 Each document is stored as a separate JSON file under
 `data/documents/<folder-id>/`, with its attachments stored alongside it. The
 entire `data/` directory is ignored by Git, so personal folders, documents, and

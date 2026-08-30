@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import unittest
@@ -120,6 +121,24 @@ class FoldersTests(unittest.TestCase):
         )
         self.assertEqual(path.read_bytes(), b"image bytes")
         self.assertEqual(metadata, files[0])
+
+    def test_add_file_from_stream(self):
+        folder = self.store.create("וידאו")
+        document = self.store.create_document(folder["id"], "2026-08-30", "סרטון")
+        content = b"mov data" * 1024
+
+        files = self.store.add_files(
+            folder["id"],
+            document["id"],
+            [("recording.mov", "video/quicktime", io.BytesIO(content))],
+        )
+
+        path, metadata = self.store.get_file(
+            folder["id"], document["id"], files[0]["id"]
+        )
+        self.assertEqual(path.read_bytes(), content)
+        self.assertEqual(metadata["content_type"], "video/quicktime")
+        self.assertEqual(metadata["size"], len(content))
 
     def test_update_document_content(self):
         folder = self.store.create("התכתבויות")
