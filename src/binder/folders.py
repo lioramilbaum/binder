@@ -33,6 +33,10 @@ class Folders:
                     self._read_document(folder_id, document)
                     for document in folder["documents"]
                 ]
+                folder["documents"].sort(
+                    key=lambda document: document.get("created_at", ""),
+                    reverse=True,
+                )
                 return folder
         return None
 

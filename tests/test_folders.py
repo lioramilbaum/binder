@@ -84,6 +84,37 @@ class FoldersTests(unittest.TestCase):
             self.store.create_document("missing", "2026-08-30", "מסמך")
         )
 
+    def test_documents_are_sorted_by_creation_date_newest_first(self):
+        folder = self.store.create("מסמכים")
+        first = self.store.create_document(folder["id"], "2026-08-30", "ראשון")
+        second = self.store.create_document(folder["id"], "2026-01-01", "שני")
+
+        documents = self.store.get(folder["id"])["documents"]
+
+        self.assertEqual(
+            [document["id"] for document in documents],
+            [second["id"], first["id"]],
+        )
+
+    def test_document_sort_tolerates_missing_legacy_creation_date(self):
+        folder = self.store.create("תיקייה ישנה")
+        stored = self.store.list()
+        stored[0]["documents"] = [
+            {"id": "legacy", "date": "2025-01-01", "name": "ישן", "content": ""},
+            {
+                "id": "new",
+                "date": "2026-01-01",
+                "name": "חדש",
+                "content": "",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+        ]
+        self.store.path.write_text(json.dumps(stored), encoding="utf-8")
+
+        documents = self.store.get(folder["id"])["documents"]
+
+        self.assertEqual([document["id"] for document in documents], ["new", "legacy"])
+
     def test_reads_legacy_inline_document(self):
         folder = self.store.create("תיקייה ישנה")
         stored = self.store.list()
