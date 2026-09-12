@@ -135,8 +135,8 @@ class Folders:
         self._write_document(folder_id, document)
         return saved_files
 
-    def update_document_content(
-        self, folder_id: str, document_id: str, content: str
+    def update_document(
+        self, folder_id: str, document_id: str, updates: dict[str, str]
     ) -> Optional[dict[str, object]]:
         folders = self.list()
         for folder in folders:
@@ -149,7 +149,11 @@ class Folders:
                 document = self._read_document(folder_id, document_summary)
                 document.setdefault("time", "")
                 document.setdefault("files", [])
-                document["content"] = content.strip()
+
+                for key in ["name", "date", "time", "description", "content"]:
+                    if key in updates:
+                        document[key] = str(updates[key]).strip()
+
                 document["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._write_document(folder_id, document)
                 documents[index] = {

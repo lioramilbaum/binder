@@ -1,4 +1,6 @@
 import io
+import json
+from unittest.mock import Mock
 import unittest
 
 from src.binder.binder import Binder
@@ -36,6 +38,51 @@ class BinderUploadTests(unittest.TestCase):
         uploads = handler._read_multipart_uploads("multipart/form-data", 7)
 
         self.assertEqual(uploads, [])
+
+
+class BinderEditTests(unittest.TestCase):
+    def patch(self, payload):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder/documents/document"
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = Mock()
+        handler.store.update_document.return_value = {"id": "document"}
+        handler._send_json = Mock()
+        handler.do_PATCH()
+        return handler
+
+    def test_edit_all_fields(self):
+        payload = {
+            "name": " Updated ", "date": "2026-09-12", "time": "10:30",
+            "description": "Description", "content": "Content",
+        }
+        handler = self.patch(payload)
+        handler.store.update_document.assert_called_once_with(
+            "folder", "document", {**payload, "name": "Updated"}
+        )
+        handler._send_json.assert_called_once_with({"id": "document"})
+
+    def test_rejects_invalid_edits_without_writing(self):
+        for payload in (
+            {"name": " "}, {"name": "x" * 201},
+            {"description": "x" * 1001}, {"date": ""},
+            {"date": "2026-02-30"}, {"time": "25:00"},
+            {"content": None}, {"time": False}, {"name": []},
+            {}, [], {"id": "replacement"},
+        ):
+            with self.subTest(payload=payload):
+                handler = self.patch(payload)
+                handler.store.update_document.assert_not_called()
+                self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_optional_fields_can_be_cleared(self):
+        payload = {"time": "", "description": "", "content": ""}
+        handler = self.patch(payload)
+        handler.store.update_document.assert_called_once_with(
+            "folder", "document", payload
+        )
 
 
 if __name__ == "__main__":

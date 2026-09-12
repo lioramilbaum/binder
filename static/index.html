@@ -88,8 +88,8 @@
       <form id="document-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">מסמך חדש</p>
-            <h2>הוספת מידע לתיקייה</h2>
+            <p class="eyebrow" id="document-dialog-eyebrow">מסמך חדש</p>
+            <h2 id="document-dialog-title">הוספת מידע לתיקייה</h2>
           </div>
           <button class="icon-button" id="close-document-dialog" type="button" aria-label="סגירה">×</button>
         </div>
@@ -121,33 +121,6 @@
         <div class="dialog-actions">
           <button class="secondary-button" id="cancel-document-dialog" type="button">ביטול</button>
           <button class="primary-button" type="submit">שמירת מסמך</button>
-        </div>
-      </form>
-    </dialog>
-
-    <dialog id="content-dialog">
-      <form id="content-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow">עריכת מסמך</p>
-            <h2 id="content-dialog-title">עריכת תוכן</h2>
-          </div>
-          <button class="icon-button" id="close-content-dialog" type="button" aria-label="סגירה">×</button>
-        </div>
-        <label for="existing-document-content">תוכן המסמך</label>
-        <textarea id="existing-document-content" class="content-input" name="content" rows="14"></textarea>
-        <label for="existing-document-files">קבצים נוספים <span>(לא חובה, עד 50MB יחד)</span></label>
-        <div class="file-drop-zone" id="existing-file-drop-zone" role="button" tabindex="0">
-          <input id="existing-document-files" name="files" type="file" multiple hidden>
-          <strong>גררו קבצים לכאן</strong>
-          <span>או לחצו לבחירת תמונות וקבצים</span>
-          <div class="selected-files" id="existing-selected-files"></div>
-        </div>
-        <p class="field-hint">אפשר גם להדביק תמונה ישירות בשדה התוכן.</p>
-        <p id="content-form-error" class="error" role="alert"></p>
-        <div class="dialog-actions">
-          <button class="secondary-button" id="cancel-content-dialog" type="button">ביטול</button>
-          <button class="primary-button" type="submit">שמירת תוכן</button>
         </div>
       </form>
     </dialog>

@@ -107,13 +107,43 @@ class Binder(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
-        if "content" in payload:
-            document = self.store.update_document_content(
-                parts[2], parts[4], str(payload["content"])
+
+        allowed_keys = {"name", "date", "time", "description", "content"}
+        updates = {k: v for k, v in payload.items() if k in allowed_keys}
+
+        if not updates:
+            self._send_json(
+                {"error": "לא נמצאו שינויים לשמירה"}, HTTPStatus.BAD_REQUEST
             )
-        else:
-            self._send_json({"error": "לא נמצאו שינויים לשמירה"}, HTTPStatus.BAD_REQUEST)
             return
+
+        if any(not isinstance(value, str) for value in updates.values()):
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
+        updates = {key: value.strip() for key, value in updates.items()}
+        if "name" in updates and not updates["name"]:
+            self._send_json(
+                {"error": "יש להזין שם ותאריך למסמך"}, HTTPStatus.BAD_REQUEST
+            )
+            return
+        if len(updates.get("name", "")) > 200 or len(updates.get("description", "")) > 1000:
+            self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if "date" in updates:
+            try:
+                date.fromisoformat(str(updates["date"]))
+            except ValueError:
+                self._send_json({"error": "התאריך אינו תקין"}, HTTPStatus.BAD_REQUEST)
+                return
+        if "time" in updates and updates["time"]:
+            try:
+                time.fromisoformat(str(updates["time"]))
+            except ValueError:
+                self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
+                return
+
+        document = self.store.update_document(parts[2], parts[4], updates)
         if document is None:
             self._send_json({"error": "המסמך לא נמצא"}, HTTPStatus.NOT_FOUND)
             return

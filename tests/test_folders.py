@@ -177,8 +177,8 @@ class FoldersTests(unittest.TestCase):
             folder["id"], "2026-08-30", "שיחה", content="הודעה ראשונה"
         )
 
-        updated = self.store.update_document_content(
-            folder["id"], document["id"], "הודעה ראשונה\nהודעה נוספת"
+        updated = self.store.update_document(
+            folder["id"], document["id"], {"content": "הודעה ראשונה\nהודעה נוספת"}
         )
 
         self.assertEqual(updated["content"], "הודעה ראשונה\nהודעה נוספת")
@@ -189,8 +189,34 @@ class FoldersTests(unittest.TestCase):
         folder = self.store.create("התכתבויות")
 
         self.assertIsNone(
-            self.store.update_document_content(folder["id"], "missing", "תוכן")
+            self.store.update_document(folder["id"], "missing", {"content": "תוכן"})
         )
+
+    def test_update_all_document_fields_preserves_files_and_identity(self):
+        folder = self.store.create("מסמכים")
+        document = self.store.create_document(folder["id"], "2026-08-30", "ישן")
+        files = self.store.add_files(
+            folder["id"], document["id"], [("note.txt", "text/plain", b"note")]
+        )
+        updates = {
+            "name": "חדש", "date": "2026-09-12", "time": "12:30",
+            "description": "תיאור חדש", "content": "תוכן חדש",
+        }
+        updated = self.store.update_document(folder["id"], document["id"], updates)
+        reloaded = Folders(self.store.path).get(folder["id"])["documents"][0]
+        self.assertEqual(updated, reloaded)
+        for key, value in updates.items():
+            self.assertEqual(reloaded[key], value)
+        self.assertEqual(reloaded["id"], document["id"])
+        self.assertEqual(reloaded["created_at"], document["created_at"])
+        self.assertEqual(reloaded["files"], files)
+        self.assertGreater(reloaded["updated_at"], document["updated_at"])
+        cleared = self.store.update_document(
+            folder["id"], document["id"], {"time": "", "description": "", "content": ""}
+        )
+        self.assertEqual(cleared["name"], updates["name"])
+        for key in ("time", "description", "content"):
+            self.assertEqual(cleared[key], "")
 
     def test_imports_whatsapp_chat_from_attachment(self):
         folder = self.store.create("שיחות")

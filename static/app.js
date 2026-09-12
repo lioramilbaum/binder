@@ -11,9 +11,6 @@ const documentsEmptyState = document.querySelector("#documents-empty-state");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
-const contentDialog = document.querySelector("#content-dialog");
-const contentForm = document.querySelector("#content-form");
-const contentFormError = document.querySelector("#content-form-error");
 let currentFolderId = null;
 let currentDocumentId = null;
 
@@ -98,18 +95,13 @@ async function uploadFiles(documentId, files) {
   if (!response.ok) throw new Error(result.error || "העלאת הקבצים נכשלה.");
 }
 
-const clearNewDocumentFiles = setupFileDropZone(
+const clearDocumentFiles = setupFileDropZone(
   "document-files",
   "document-file-drop-zone",
   "document-selected-files",
   "document-content",
 );
-const clearExistingDocumentFiles = setupFileDropZone(
-  "existing-document-files",
-  "existing-file-drop-zone",
-  "existing-selected-files",
-  "existing-document-content",
-);
+
 
 function renderFolders(folders) {
   foldersElement.replaceChildren();
@@ -144,6 +136,10 @@ function renderFolders(folders) {
   }
 }
 
+const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
+const documentDialogTitle = document.querySelector("#document-dialog-title");
+const documentSubmitButton = documentForm.querySelector('button[type="submit"]');
+
 function renderDocuments(documents) {
   documentsElement.replaceChildren();
   documentsEmptyState.hidden = documents.length !== 0;
@@ -169,32 +165,40 @@ function renderDocuments(documents) {
     summary.append(summaryText, marker);
     const body = document.createElement("div");
     body.className = "document-body";
+
+    const editActions = document.createElement("div");
+    editActions.className = "document-actions";
+
+    const editButton = document.createElement("button");
+    editButton.className = "secondary-button small-button";
+    editButton.type = "button";
+    editButton.textContent = "עריכת מסמך";
+    editButton.addEventListener("click", () => {
+      currentDocumentId = documentItem.id;
+      documentDialogEyebrow.textContent = "עריכת מסמך";
+      documentDialogTitle.textContent = "עדכון פרטי המסמך";
+      documentSubmitButton.textContent = "שמירת שינויים";
+
+      document.querySelector("#document-date").value = documentItem.date;
+      document.querySelector("#document-time").value = documentItem.time || "";
+      document.querySelector("#document-name").value = documentItem.name;
+      document.querySelector("#document-description").value = documentItem.description || "";
+      document.querySelector("#document-content").value = documentItem.content || "";
+
+      documentFormError.textContent = "";
+      clearDocumentFiles();
+      documentDialog.showModal();
+    });
+
+    editActions.append(editButton);
+    body.append(editActions);
+
     if (documentItem.description) {
       const description = document.createElement("p");
       description.className = "document-description";
       description.textContent = documentItem.description;
       body.append(description);
     }
-    if (documentItem.whatsapp_chat?.messages?.length) {
-      body.append(renderWhatsAppChat(documentItem.whatsapp_chat));
-    } else {
-      const content = document.createElement("pre");
-      content.textContent = documentItem.content || "אין תוכן במסמך.";
-      body.append(content);
-    }
-    const editButton = document.createElement("button");
-    editButton.className = "secondary-button edit-content-button";
-    editButton.type = "button";
-    editButton.textContent = "עריכת תוכן";
-    editButton.addEventListener("click", () => {
-      currentDocumentId = documentItem.id;
-      document.querySelector("#content-dialog-title").textContent = documentItem.name;
-      document.querySelector("#existing-document-content").value = documentItem.content || "";
-      contentFormError.textContent = "";
-      clearExistingDocumentFiles();
-      contentDialog.showModal();
-    });
-    body.append(editButton);
     if (documentItem.files?.length) {
       const files = document.createElement("div");
       files.className = "attachment-grid";
@@ -319,13 +323,18 @@ document.querySelector("#close-dialog").addEventListener("click", () => dialog.c
 document.querySelector("#cancel-dialog").addEventListener("click", () => dialog.close());
 document.querySelector("#back-button").addEventListener("click", () => showHome());
 document.querySelector("#new-document-button").addEventListener("click", () => {
+  currentDocumentId = null;
+  documentDialogEyebrow.textContent = "מסמך חדש";
+  documentDialogTitle.textContent = "הוספת מידע לתיקייה";
+  documentSubmitButton.textContent = "שמירת מסמך";
+  documentForm.reset();
+  clearDocumentFiles();
+  documentFormError.textContent = "";
   document.querySelector("#document-date").value = new Date().toISOString().slice(0, 10);
   documentDialog.showModal();
 });
 document.querySelector("#close-document-dialog").addEventListener("click", () => documentDialog.close());
 document.querySelector("#cancel-document-dialog").addEventListener("click", () => documentDialog.close());
-document.querySelector("#close-content-dialog").addEventListener("click", () => contentDialog.close());
-document.querySelector("#cancel-content-dialog").addEventListener("click", () => contentDialog.close());
 
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
@@ -333,10 +342,6 @@ dialog.addEventListener("click", (event) => {
 
 documentDialog.addEventListener("click", (event) => {
   if (event.target === documentDialog) documentDialog.close();
-});
-
-contentDialog.addEventListener("click", (event) => {
-  if (event.target === contentDialog) contentDialog.close();
 });
 
 form.addEventListener("submit", async (event) => {
@@ -367,8 +372,14 @@ documentForm.addEventListener("submit", async (event) => {
   submitButton.textContent = "שומר…";
   const data = new FormData(documentForm);
   try {
-    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/documents`, {
-      method: "POST",
+    const isEdit = !!currentDocumentId;
+    const url = isEdit
+      ? `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(currentDocumentId)}`
+      : `/api/folders/${encodeURIComponent(currentFolderId)}/documents`;
+    const method = isEdit ? "PATCH" : "POST";
+
+    const response = await fetch(url, {
+      method: method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         date: data.get("date"),
@@ -388,51 +399,15 @@ documentForm.addEventListener("submit", async (event) => {
       return;
     }
     const selectedFiles = data.getAll("files").filter((file) => file.size > 0);
+    // Retry an upload against the saved document instead of creating a duplicate.
+    currentDocumentId = result.id;
     await uploadFiles(result.id, selectedFiles);
     documentForm.reset();
-    clearNewDocumentFiles();
+    clearDocumentFiles();
     documentDialog.close();
     await openFolder(currentFolderId, false);
   } catch (error) {
     documentFormError.textContent =
-      error.message || "לא ניתן להתחבר לשרת. ודאו שהשרת פועל ונסו שוב.";
-  } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = originalButtonText;
-  }
-});
-
-contentForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  contentFormError.textContent = "";
-  const submitButton = contentForm.querySelector('button[type="submit"]');
-  const originalButtonText = submitButton.textContent;
-  submitButton.disabled = true;
-  submitButton.textContent = "שומר…";
-  try {
-    const response = await fetch(
-      `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(currentDocumentId)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: document.querySelector("#existing-document-content").value,
-        }),
-      },
-    );
-    const result = await response.json();
-    if (!response.ok) {
-      contentFormError.textContent = result.error || "שמירת התוכן נכשלה.";
-      return;
-    }
-    const data = new FormData(contentForm);
-    const selectedFiles = data.getAll("files").filter((file) => file.size > 0);
-    await uploadFiles(currentDocumentId, selectedFiles);
-    clearExistingDocumentFiles();
-    contentDialog.close();
-    await openFolder(currentFolderId, false);
-  } catch (error) {
-    contentFormError.textContent =
       error.message || "לא ניתן להתחבר לשרת. ודאו שהשרת פועל ונסו שוב.";
   } finally {
     submitButton.disabled = false;
