@@ -44,6 +44,30 @@ class WhatsAppChatTests(unittest.TestCase):
     def test_ignores_unrelated_file(self):
         self.assertIsNone(WhatsAppChat.from_file("notes.pdf", b"content"))
 
+    def test_for_date_keeps_only_matching_day(self):
+        text = (
+            "29/08/2026, 10:00 - דנה: אתמול\n"
+            "30/08/2026, 14:35 - דנה: אפשר לדבר? 😊\n"
+            "30/08/2026, 14:36 - אני: כן\n"
+        )
+        chat = WhatsAppChat.from_file("chat.txt", text.encode())
+
+        same_day = chat.for_date("2026-08-30")
+
+        self.assertEqual(len(same_day.messages), 2)
+        self.assertTrue(
+            all(message["date"] == "30/08/2026" for message in same_day.messages)
+        )
+        self.assertEqual(same_day.participants, ["דנה", "אני"])
+
+    def test_for_date_with_no_match_returns_empty_chat(self):
+        chat = WhatsAppChat.from_file("chat.txt", CHAT_TEXT.encode())
+
+        empty = chat.for_date("2020-01-01")
+
+        self.assertEqual(empty.messages, [])
+        self.assertEqual(empty.participants, [])
+
 
 if __name__ == "__main__":
     unittest.main()

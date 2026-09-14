@@ -141,6 +141,11 @@ const documentDialogTitle = document.querySelector("#document-dialog-title");
 const documentSubmitButton = documentForm.querySelector('button[type="submit"]');
 
 function renderDocuments(documents) {
+  const openIds = new Set(
+    [...documentsElement.querySelectorAll("details.document-item[open]")].map(
+      (details) => details.dataset.documentId,
+    ),
+  );
   documentsElement.replaceChildren();
   documentsEmptyState.hidden = documents.length !== 0;
   document.querySelector("#document-count").textContent =
@@ -149,6 +154,8 @@ function renderDocuments(documents) {
   for (const documentItem of documents) {
     const item = document.createElement("details");
     item.className = "document-item";
+    item.dataset.documentId = documentItem.id;
+    if (openIds.has(documentItem.id)) item.open = true;
     const summary = document.createElement("summary");
     const summaryText = document.createElement("span");
     const title = document.createElement("h3");
@@ -191,6 +198,27 @@ function renderDocuments(documents) {
     });
 
     editActions.append(editButton);
+
+    if (documentItem.whatsapp_chat?.messages?.length) {
+      const chatToggle = document.createElement("button");
+      chatToggle.className = "secondary-button small-button";
+      chatToggle.type = "button";
+      chatToggle.textContent = "הצגת שיחת WhatsApp";
+      let chatElement = null;
+      chatToggle.addEventListener("click", () => {
+        if (chatElement) {
+          chatElement.remove();
+          chatElement = null;
+          chatToggle.textContent = "הצגת שיחת WhatsApp";
+        } else {
+          chatElement = renderWhatsAppChat(documentItem.whatsapp_chat);
+          body.append(chatElement);
+          chatToggle.textContent = "הסתרת שיחת WhatsApp";
+        }
+      });
+      editActions.append(chatToggle);
+    }
+
     body.append(editActions);
 
     if (documentItem.description) {
@@ -204,6 +232,8 @@ function renderDocuments(documents) {
       files.className = "attachment-grid";
       for (const attachment of documentItem.files) {
         const url = `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(documentItem.id)}/files/${encodeURIComponent(attachment.id)}`;
+        const item = document.createElement("div");
+        item.className = "attachment-item";
         const link = document.createElement("a");
         link.className = "attachment";
         link.href = url;
@@ -218,7 +248,25 @@ function renderDocuments(documents) {
         const filename = document.createElement("span");
         filename.textContent = attachment.name;
         link.append(filename);
-        files.append(link);
+        const removeButton = document.createElement("button");
+        removeButton.className = "attachment-remove";
+        removeButton.type = "button";
+        removeButton.textContent = "×";
+        removeButton.title = "הסרת קובץ";
+        removeButton.setAttribute("aria-label", "הסרת קובץ");
+        removeButton.addEventListener("click", async () => {
+          if (!confirm(`למחוק את הקובץ "${attachment.name}"?`)) return;
+          removeButton.disabled = true;
+          const response = await fetch(url, { method: "DELETE" });
+          if (!response.ok) {
+            removeButton.disabled = false;
+            alert("מחיקת הקובץ נכשלה.");
+            return;
+          }
+          await openFolder(currentFolderId, false);
+        });
+        item.append(link, removeButton);
+        files.append(item);
       }
       body.append(files);
     }

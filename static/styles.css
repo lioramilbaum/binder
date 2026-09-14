@@ -120,10 +120,29 @@ button { cursor: pointer; }
 .file-drop-zone strong { color: var(--ink); }
 .selected-files { display: grid; gap: 4px; margin-top: 8px; color: var(--accent-dark); font-size: .82rem; }
 .attachment-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 20px; }
+.attachment-item { position: relative; }
 .attachment { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; overflow: hidden; }
 .attachment:hover { border-color: var(--accent); }
 .attachment img { width: 100%; height: 110px; object-fit: cover; border-radius: 5px; }
 .attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-remove {
+  position: absolute;
+  top: -7px;
+  inset-inline-end: -7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.attachment-remove:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
 .whatsapp-chat { display: grid; gap: 5px; max-height: 620px; margin-top: 18px; padding: 18px 14px; overflow-y: auto; border-radius: 9px; background-color: #efeae2; background-image: radial-gradient(rgba(70, 90, 80, .08) 1px, transparent 1px); background-size: 18px 18px; direction: rtl; }
 .chat-date { justify-self: center; margin: 8px 0; padding: 5px 10px; border-radius: 7px; color: #54656f; background: #f7f8d4; font-size: .74rem; }
 .chat-system-message { justify-self: center; max-width: 82%; padding: 6px 10px; text-align: center; border-radius: 7px; color: #54656f; background: #d9f0f4; font-size: .75rem; }

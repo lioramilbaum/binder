@@ -230,6 +230,98 @@ class FoldersTests(unittest.TestCase):
         saved = self.store.get(folder["id"])["documents"][0]
         self.assertEqual(saved["whatsapp_chat"]["messages"][0]["sender"], "דנה")
 
+    def test_imports_only_messages_from_the_document_date(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "WhatsApp")
+        chat = (
+            "29/08/2026, 10:00 - דנה: אתמול\n"
+            "30/08/2026, 14:35 - דנה: אפשר לדבר?\n"
+        ).encode()
+
+        self.store.add_files(
+            folder["id"], document["id"], [("chat.txt", "text/plain", chat)]
+        )
+
+        saved = self.store.get(folder["id"])["documents"][0]
+        self.assertEqual(len(saved["whatsapp_chat"]["messages"]), 1)
+        self.assertEqual(saved["whatsapp_chat"]["messages"][0]["date"], "30/08/2026")
+
+    def test_skips_whatsapp_chat_when_no_message_matches_document_date(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2020-01-01", "WhatsApp")
+        chat = "30/08/2026, 14:35 - דנה: אפשר לדבר?".encode()
+
+        self.store.add_files(
+            folder["id"], document["id"], [("chat.txt", "text/plain", chat)]
+        )
+
+        saved = self.store.get(folder["id"])["documents"][0]
+        self.assertNotIn("whatsapp_chat", saved)
+
+    def test_removes_attachment_and_its_file_on_disk(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "מסמך")
+        saved = self.store.add_files(
+            folder["id"], document["id"], [("photo.jpg", "image/jpeg", b"data")]
+        )
+        file_id = saved[0]["id"]
+        stored_path = (
+            self.store._attachments_path(folder["id"], document["id"])
+            / saved[0]["stored_name"]
+        )
+        self.assertTrue(stored_path.exists())
+
+        updated = self.store.remove_file(folder["id"], document["id"], file_id)
+
+        self.assertEqual(updated["files"], [])
+        self.assertFalse(stored_path.exists())
+        reloaded = self.store.get(folder["id"])["documents"][0]
+        self.assertEqual(reloaded["files"], [])
+
+    def test_removing_the_whatsapp_source_file_clears_the_parsed_chat(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "WhatsApp")
+        chat = "30/08/2026, 14:35 - דנה: אפשר לדבר?".encode()
+        saved = self.store.add_files(
+            folder["id"], document["id"], [("chat.txt", "text/plain", chat)]
+        )
+        file_id = saved[0]["id"]
+
+        updated = self.store.remove_file(folder["id"], document["id"], file_id)
+
+        self.assertNotIn("whatsapp_chat", updated)
+        self.assertNotIn("whatsapp_chat_file_id", updated)
+
+    def test_removing_an_unrelated_file_keeps_the_parsed_chat(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "WhatsApp")
+        chat = "30/08/2026, 14:35 - דנה: אפשר לדבר?".encode()
+        self.store.add_files(
+            folder["id"], document["id"], [("chat.txt", "text/plain", chat)]
+        )
+        saved = self.store.add_files(
+            folder["id"], document["id"], [("photo.jpg", "image/jpeg", b"data")]
+        )
+        photo_id = saved[0]["id"]
+
+        updated = self.store.remove_file(folder["id"], document["id"], photo_id)
+
+        self.assertIn("whatsapp_chat", updated)
+
+    def test_remove_file_returns_none_for_missing_file_or_document(self):
+        folder = self.store.create("שיחות")
+        document = self.store.create_document(folder["id"], "2026-08-30", "מסמך")
+
+        self.assertIsNone(
+            self.store.remove_file(folder["id"], document["id"], "missing")
+        )
+        self.assertIsNone(
+            self.store.remove_file(folder["id"], "missing-document", "missing")
+        )
+        self.assertIsNone(
+            self.store.remove_file("missing-folder", document["id"], "missing")
+        )
+
 
 
 if __name__ == "__main__":

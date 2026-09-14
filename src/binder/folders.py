@@ -103,6 +103,7 @@ class Folders:
 
         saved_files = []
         imported_chat = None
+        imported_chat_file_id = None
         for filename, content_type, content in uploads:
             file_id = str(uuid4())
             suffix = Path(filename).suffix[:16]
@@ -126,14 +127,49 @@ class Folders:
                 }
             )
             if imported_chat is None:
-                imported_chat = WhatsAppChat.from_path(filename, attachment_path)
+                candidate = WhatsAppChat.from_path(filename, attachment_path)
+                if candidate is not None:
+                    imported_chat = candidate
+                    imported_chat_file_id = file_id
 
         document.setdefault("files", []).extend(saved_files)
         if imported_chat is not None:
-            document["whatsapp_chat"] = imported_chat.to_dict()
+            same_day_chat = imported_chat.for_date(str(document.get("date", "")))
+            if same_day_chat.messages:
+                document["whatsapp_chat"] = same_day_chat.to_dict()
+                document["whatsapp_chat_file_id"] = imported_chat_file_id
         document["updated_at"] = datetime.now(timezone.utc).isoformat()
         self._write_document(folder_id, document)
         return saved_files
+
+    def remove_file(
+        self, folder_id: str, document_id: str, file_id: str
+    ) -> Optional[dict[str, object]]:
+        folder = self.get(folder_id)
+        if folder is None:
+            return None
+        document = next(
+            (item for item in folder["documents"] if item["id"] == document_id),
+            None,
+        )
+        if document is None:
+            return None
+        files = document.get("files", [])
+        attachment = next((item for item in files if item["id"] == file_id), None)
+        if attachment is None:
+            return None
+
+        document["files"] = [item for item in files if item["id"] != file_id]
+        attachment_path = (
+            self._attachments_path(folder_id, document_id) / attachment["stored_name"]
+        )
+        attachment_path.unlink(missing_ok=True)
+        if document.get("whatsapp_chat_file_id") == file_id:
+            document.pop("whatsapp_chat", None)
+            document.pop("whatsapp_chat_file_id", None)
+        document["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._write_document(folder_id, document)
+        return document
 
     def update_document(
         self, folder_id: str, document_id: str, updates: dict[str, str]

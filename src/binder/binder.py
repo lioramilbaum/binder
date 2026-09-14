@@ -149,6 +149,19 @@ class Binder(BaseHTTPRequestHandler):
             return
         self._send_json(document)
 
+    def do_DELETE(self) -> None:
+        path = urlparse(self.path).path
+        attachment_parts = self._attachment_parts(path)
+        if attachment_parts is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        folder_id, document_id, file_id = attachment_parts
+        document = self.store.remove_file(folder_id, document_id, file_id)
+        if document is None:
+            self._send_json({"error": "הקובץ לא נמצא"}, HTTPStatus.NOT_FOUND)
+            return
+        self._send_json(document)
+
     def _create_document(self, path: str, payload: dict[str, object]) -> None:
         folder_id = path.removeprefix("/api/folders/").removesuffix("/documents")
         name = str(payload.get("name", "")).strip()

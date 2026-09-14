@@ -88,6 +88,35 @@ class WhatsAppChat:
             "me": OWNER_NAME,
         }
 
+    def for_date(self, iso_date: str) -> "WhatsAppChat":
+        messages = [
+            message
+            for message in self.messages
+            if self._to_iso_date(str(message["date"])) == iso_date
+        ]
+        participants = list(
+            dict.fromkeys(
+                str(message["sender"])
+                for message in messages
+                if message.get("sender")
+            )
+        )
+        return WhatsAppChat(messages=messages, participants=participants)
+
+    @staticmethod
+    def _to_iso_date(date: str) -> Optional[str]:
+        separator = "/" if "/" in date else "."
+        parts = date.split(separator)
+        if len(parts) != 3:
+            return None
+        day, month, year = parts
+        if len(year) == 2:
+            year = f"20{year}"
+        try:
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        except ValueError:
+            return None
+
     @staticmethod
     def _extract_text(filename: str, content: bytes) -> Optional[str]:
         suffix = Path(filename).suffix.lower()

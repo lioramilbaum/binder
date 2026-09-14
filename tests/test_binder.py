@@ -85,5 +85,34 @@ class BinderEditTests(unittest.TestCase):
         )
 
 
+class BinderDeleteTests(unittest.TestCase):
+    def delete(self, path, remove_file_result={"id": "document"}):
+        handler = object.__new__(Binder)
+        handler.path = path
+        handler.store = Mock()
+        handler.store.remove_file.return_value = remove_file_result
+        handler._send_json = Mock()
+        handler.send_error = Mock()
+        handler.do_DELETE()
+        return handler
+
+    def test_deletes_attachment(self):
+        handler = self.delete("/api/folders/folder/documents/document/files/file")
+        handler.store.remove_file.assert_called_once_with("folder", "document", "file")
+        handler._send_json.assert_called_once_with({"id": "document"})
+
+    def test_rejects_path_without_a_file_segment(self):
+        handler = self.delete("/api/folders/folder")
+        handler.store.remove_file.assert_not_called()
+        handler.send_error.assert_called_once()
+
+    def test_missing_file_returns_404(self):
+        handler = self.delete(
+            "/api/folders/folder/documents/document/files/file",
+            remove_file_result=None,
+        )
+        self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+
 if __name__ == "__main__":
     unittest.main()
