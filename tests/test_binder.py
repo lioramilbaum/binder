@@ -1,9 +1,45 @@
 import io
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import unittest
 
 from src.binder.binder import Binder
+
+
+class BinderConfigTests(unittest.TestCase):
+    def get_config(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/config"
+        handler._send_json = Mock()
+        handler.do_GET()
+        return handler
+
+    def test_returns_empty_google_config_by_default(self):
+        with patch("src.binder.binder.GOOGLE_CLIENT_ID", ""), patch(
+            "src.binder.binder.GOOGLE_API_KEY", ""
+        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
+            handler = self.get_config()
+        handler._send_json.assert_called_once_with(
+            {"googleClientId": "", "googleApiKey": ""}
+        )
+
+    def test_hides_credentials_when_toggle_is_disabled(self):
+        with patch("src.binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
+            "src.binder.binder.GOOGLE_API_KEY", "api-key"
+        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
+            handler = self.get_config()
+        handler._send_json.assert_called_once_with(
+            {"googleClientId": "", "googleApiKey": ""}
+        )
+
+    def test_returns_configured_google_credentials_when_toggle_is_enabled(self):
+        with patch("src.binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
+            "src.binder.binder.GOOGLE_API_KEY", "api-key"
+        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", True):
+            handler = self.get_config()
+        handler._send_json.assert_called_once_with(
+            {"googleClientId": "client-id", "googleApiKey": "api-key"}
+        )
 
 
 class BinderUploadTests(unittest.TestCase):

@@ -44,9 +44,10 @@ function setupFileDropZone(inputId, zoneId, listId, pasteTargetId) {
   }
 
   zone.addEventListener("click", (event) => {
-    if (event.target !== input) input.click();
+    if (event.target !== input && !event.target.closest("button")) input.click();
   });
   zone.addEventListener("keydown", (event) => {
+    if (event.target.closest("button")) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       input.click();
@@ -71,9 +72,12 @@ function setupFileDropZone(inputId, zoneId, listId, pasteTargetId) {
     }
   });
 
-  return () => {
-    input.value = "";
-    renderSelectedFiles();
+  return {
+    addFiles,
+    clear: () => {
+      input.value = "";
+      renderSelectedFiles();
+    },
   };
 }
 
@@ -95,13 +99,123 @@ async function uploadFiles(documentId, files) {
   if (!response.ok) throw new Error(result.error || "העלאת הקבצים נכשלה.");
 }
 
-const clearDocumentFiles = setupFileDropZone(
+const documentFiles = setupFileDropZone(
   "document-files",
   "document-file-drop-zone",
   "document-selected-files",
   "document-content",
 );
 
+const googleDriveImportButton = document.querySelector("#google-drive-import-button");
+let googleConfig = { googleClientId: "", googleApiKey: "" };
+let googleApisReady = null;
+let googleTokenClient = null;
+let googleAccessToken = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`טעינת ${src} נכשלה.`));
+    document.head.append(script);
+  });
+}
+
+function ensureGoogleApisReady() {
+  if (!googleApisReady) {
+    googleApisReady = Promise.all([
+      loadScript("https://accounts.google.com/gsi/client"),
+      loadScript("https://apis.google.com/js/api.js").then(
+        () => new Promise((resolve) => gapi.load("picker", resolve)),
+      ),
+    ]);
+  }
+  return googleApisReady;
+}
+
+function requestGoogleAccessToken() {
+  return new Promise((resolve, reject) => {
+    if (!googleTokenClient) {
+      googleTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: googleConfig.googleClientId,
+        scope: "https://www.googleapis.com/auth/drive.readonly",
+        callback: () => {},
+      });
+    }
+    googleTokenClient.callback = (response) => {
+      if (response.error) {
+        reject(new Error("ההתחברות ל-Google Drive נכשלה."));
+        return;
+      }
+      googleAccessToken = response.access_token;
+      resolve(googleAccessToken);
+    };
+    googleTokenClient.requestAccessToken({ prompt: googleAccessToken ? "" : "consent" });
+  });
+}
+
+function openGoogleDrivePicker() {
+  return new Promise((resolve, reject) => {
+    const picker = new google.picker.PickerBuilder()
+      .addView(google.picker.ViewId.DOCS)
+      .setOAuthToken(googleAccessToken)
+      .setDeveloperKey(googleConfig.googleApiKey)
+      .setCallback((data) => {
+        if (data.action === google.picker.Action.PICKED) resolve(data.docs);
+        else if (data.action === google.picker.Action.CANCEL) resolve([]);
+      })
+      .build();
+    picker.setVisible(true);
+  });
+}
+
+async function downloadGoogleDriveFile(doc) {
+  const isGoogleNative = doc.mimeType.startsWith("application/vnd.google-apps");
+  const url = isGoogleNative
+    ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(doc.id)}/export?mimeType=${encodeURIComponent("application/pdf")}`
+    : `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(doc.id)}?alt=media`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${googleAccessToken}` },
+  });
+  if (!response.ok) throw new Error(`הורדת "${doc.name}" מ-Google Drive נכשלה.`);
+  const blob = await response.blob();
+  const name = isGoogleNative ? `${doc.name}.pdf` : doc.name;
+  const type = isGoogleNative ? "application/pdf" : doc.mimeType || blob.type;
+  return new File([blob], name, { type });
+}
+
+googleDriveImportButton?.addEventListener("click", async () => {
+  const originalText = googleDriveImportButton.textContent;
+  googleDriveImportButton.disabled = true;
+  try {
+    await ensureGoogleApisReady();
+    await requestGoogleAccessToken();
+    const docs = await openGoogleDrivePicker();
+    if (!docs.length) return;
+    googleDriveImportButton.textContent = "מוריד קבצים…";
+    const files = [];
+    for (const doc of docs) files.push(await downloadGoogleDriveFile(doc));
+    documentFiles.addFiles(files);
+  } catch (error) {
+    documentFormError.textContent = error.message || "יבוא מ-Google Drive נכשל.";
+  } finally {
+    googleDriveImportButton.disabled = false;
+    googleDriveImportButton.textContent = originalText;
+  }
+});
+
+async function loadGoogleConfig() {
+  try {
+    const response = await fetch("/api/config");
+    googleConfig = await response.json();
+  } catch {
+    return;
+  }
+  if (googleDriveImportButton) {
+    googleDriveImportButton.hidden = !(googleConfig.googleClientId && googleConfig.googleApiKey);
+  }
+}
 
 function renderFolders(folders) {
   foldersElement.replaceChildren();
@@ -193,7 +307,7 @@ function renderDocuments(documents) {
       document.querySelector("#document-content").value = documentItem.content || "";
 
       documentFormError.textContent = "";
-      clearDocumentFiles();
+      documentFiles.clear();
       documentDialog.showModal();
     });
 
@@ -303,11 +417,22 @@ function renderWhatsAppChat(chat) {
     bubble.className = "chat-bubble";
     const sender = document.createElement("strong");
     sender.textContent = message.sender;
+    bubble.append(sender);
+    if (message.reply_to) {
+      const quote = document.createElement("div");
+      quote.className = "chat-reply-quote";
+      const quoteSender = document.createElement("strong");
+      quoteSender.textContent = message.reply_to.sender;
+      const quoteText = document.createElement("span");
+      quoteText.textContent = message.reply_to.content;
+      quote.append(quoteSender, quoteText);
+      bubble.append(quote);
+    }
     const content = document.createElement("p");
     appendLinkifiedText(content, message.content);
     const time = document.createElement("time");
     time.textContent = message.time;
-    bubble.append(sender, content, time);
+    bubble.append(content, time);
     row.append(bubble);
     conversation.append(row);
   }
@@ -376,7 +501,7 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
   documentDialogTitle.textContent = "הוספת מידע לתיקייה";
   documentSubmitButton.textContent = "שמירת מסמך";
   documentForm.reset();
-  clearDocumentFiles();
+  documentFiles.clear();
   documentFormError.textContent = "";
   document.querySelector("#document-date").value = new Date().toISOString().slice(0, 10);
   documentDialog.showModal();
@@ -451,7 +576,7 @@ documentForm.addEventListener("submit", async (event) => {
     currentDocumentId = result.id;
     await uploadFiles(result.id, selectedFiles);
     documentForm.reset();
-    clearDocumentFiles();
+    documentFiles.clear();
     documentDialog.close();
     await openFolder(currentFolderId, false);
   } catch (error) {
@@ -465,6 +590,7 @@ documentForm.addEventListener("submit", async (event) => {
 
 async function start() {
   await loadFolders();
+  loadGoogleConfig();
   const folderMatch = window.location.hash.match(/^#folder\/(.+)$/);
   if (folderMatch) await openFolder(folderMatch[1], false);
 }

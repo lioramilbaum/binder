@@ -18,3 +18,8 @@ def _max_upload_size() -> int:
 
 
 MAX_UPLOAD_SIZE = _max_upload_size()
+GOOGLE_CLIENT_ID = os.environ.get("BINDER_GOOGLE_CLIENT_ID", "")
+GOOGLE_API_KEY = os.environ.get("BINDER_GOOGLE_API_KEY", "")
+GOOGLE_DRIVE_IMPORT_ENABLED = os.environ.get(
+    "BINDER_GOOGLE_DRIVE_IMPORT_ENABLED", ""
+).strip().lower() in {"1", "true", "yes"}

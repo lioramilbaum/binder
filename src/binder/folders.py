@@ -34,7 +34,11 @@ class Folders:
                     for document in folder["documents"]
                 ]
                 folder["documents"].sort(
-                    key=lambda document: document.get("created_at", ""),
+                    key=lambda document: (
+                        document.get("date", ""),
+                        document.get("time", ""),
+                        document.get("created_at", ""),
+                    ),
                     reverse=True,
                 )
                 return folder

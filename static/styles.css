@@ -153,6 +153,11 @@ button { cursor: pointer; }
 .mine .chat-bubble { background: #d9fdd3; }
 .chat-bubble strong { display: block; margin-bottom: 3px; color: #b04632; font-size: .78rem; }
 .mine .chat-bubble strong { color: #26736b; }
+.chat-reply-quote { display: grid; gap: 1px; margin-bottom: 5px; padding: 4px 8px; border-inline-start: 3px solid #b04632; border-radius: 4px; background: rgba(0, 0, 0, .04); }
+.mine .chat-reply-quote { border-inline-start-color: #26736b; }
+.chat-reply-quote strong { margin: 0; color: #b04632; font-size: .78rem; }
+.mine .chat-reply-quote strong { color: #26736b; }
+.chat-reply-quote span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #667781; font-size: .82rem; }
 .chat-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .chat-bubble a { color: #027eb5; text-decoration: none; }
 .chat-bubble a:hover, .chat-bubble a:focus { text-decoration: underline; }

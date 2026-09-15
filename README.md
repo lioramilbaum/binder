@@ -40,6 +40,37 @@ when attached to a document. Binder preserves the original export and renders
 the parsed messages as a chat conversation. Android and iPhone export formats
 can vary by locale, so the original file remains the authoritative source.
 
+## Importing files from Google Drive
+
+The document upload dialog can import files directly from Google Drive
+instead of requiring a local download first. This feature is off by default,
+behind a toggle, and needs Google API credentials once you turn it on:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create a
+   project (or reuse one) and enable the **Google Drive API** and the
+   **Google Picker API**.
+2. Create an **OAuth 2.0 Client ID** of type "Web application" and add the
+   URL you use to reach Binder (e.g. `http://localhost:8000`) to
+   **Authorized JavaScript origins**.
+3. Create an **API key**, and restrict it to the Google Picker API.
+4. Start the server with the toggle and both values set:
+
+```bash
+BINDER_GOOGLE_DRIVE_IMPORT_ENABLED=1 \
+BINDER_GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
+BINDER_GOOGLE_API_KEY="your-api-key" \
+python3 -m src.binder.app
+```
+
+The "יבוא מ-Google Drive" button appears in the document dialog only when
+`BINDER_GOOGLE_DRIVE_IMPORT_ENABLED` is set to `1`, `true`, or `yes` and both
+credentials are provided; leaving it unset (the default) hides the button and
+ignores any credentials, so the feature stays fully off until you opt in.
+Picking a file opens Google's file picker, asks you to sign in and grant
+read-only Drive access, then downloads the selected file(s) into the same
+upload flow used for local files. Google Docs, Sheets, and Slides files are
+exported as PDF; every other file type is downloaded as-is.
+
 ## Running the tests
 
 ```bash

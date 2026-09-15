@@ -10,7 +10,13 @@ from tempfile import TemporaryFile
 from typing import BinaryIO, Optional
 from urllib.parse import urlparse
 
-from .config import MAX_UPLOAD_SIZE, STATIC_DIR
+from .config import (
+    GOOGLE_API_KEY,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_DRIVE_IMPORT_ENABLED,
+    MAX_UPLOAD_SIZE,
+    STATIC_DIR,
+)
 from .folders import Folders
 
 
@@ -23,6 +29,15 @@ class Binder(BaseHTTPRequestHandler):
         attachment_parts = self._attachment_parts(path)
         if attachment_parts is not None:
             self._send_attachment(*attachment_parts)
+            return
+        if path == "/api/config":
+            enabled = GOOGLE_DRIVE_IMPORT_ENABLED
+            self._send_json(
+                {
+                    "googleClientId": GOOGLE_CLIENT_ID if enabled else "",
+                    "googleApiKey": GOOGLE_API_KEY if enabled else "",
+                }
+            )
             return
         if path == "/api/folders":
             self._send_json(self.store.list())
