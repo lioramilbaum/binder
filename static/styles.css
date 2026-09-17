@@ -110,6 +110,7 @@ button { cursor: pointer; }
 .document-item[open] .document-marker { transform: rotate(180deg); }
 .document-body { padding: 0 22px 22px; border-top: 1px solid var(--line); }
 .document-description { color: var(--muted); }
+.document-summary { font-style: italic; }
 .document-body pre { margin: 16px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; }
 .document-actions { display: flex; gap: 10px; margin-bottom: 16px; margin-top: 10px; }
 .edit-content-button { margin-top: 18px; min-height: 38px; }

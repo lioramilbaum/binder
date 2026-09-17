@@ -305,6 +305,7 @@ function renderDocuments(documents) {
       document.querySelector("#document-name").value = documentItem.name;
       document.querySelector("#document-description").value = documentItem.description || "";
       document.querySelector("#document-content").value = documentItem.content || "";
+      document.querySelector("#document-summary").value = documentItem.summary || "";
 
       documentFormError.textContent = "";
       documentFiles.clear();
@@ -340,6 +341,12 @@ function renderDocuments(documents) {
       description.className = "document-description";
       description.textContent = documentItem.description;
       body.append(description);
+    }
+    if (documentItem.summary) {
+      const thoughtsSummary = document.createElement("p");
+      thoughtsSummary.className = "document-summary";
+      thoughtsSummary.textContent = documentItem.summary;
+      body.append(thoughtsSummary);
     }
     if (documentItem.files?.length) {
       const files = document.createElement("div");
@@ -560,6 +567,7 @@ documentForm.addEventListener("submit", async (event) => {
         name: data.get("name"),
         description: data.get("description"),
         content: data.get("content"),
+        summary: data.get("summary"),
       }),
     });
     const contentType = response.headers.get("Content-Type") || "";

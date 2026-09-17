@@ -16,6 +16,7 @@ class Document:
     created_at: str
     updated_at: str
     files: list[dict[str, object]] = field(default_factory=list)
+    summary: str = ""
 
     @classmethod
     def create(
@@ -25,6 +26,7 @@ class Document:
         description: str = "",
         content: str = "",
         time: str = "",
+        summary: str = "",
     ) -> "Document":
         now = datetime.now(timezone.utc).isoformat()
         return cls(
@@ -36,6 +38,7 @@ class Document:
             content=content.strip(),
             created_at=now,
             updated_at=now,
+            summary=summary.strip(),
         )
 
     def to_dict(self) -> dict[str, object]:

@@ -59,12 +59,14 @@ class FoldersTests(unittest.TestCase):
             "שיחה עם נציג הוועד",
             "דני: שלום\nאני: היי",
             "14:35",
+            summary="צריך לבדוק תקציב",
         )
 
         self.assertEqual(document["name"], "שיחת WhatsApp")
         self.assertEqual(document["date"], "2026-08-30")
         self.assertEqual(document["time"], "14:35")
         self.assertEqual(document["content"], "דני: שלום\nאני: היי")
+        self.assertEqual(document["summary"], "צריך לבדוק תקציב")
         self.assertEqual(self.store.get(folder["id"])["documents"], [document])
         document_path = (
             self.store.path.parent
@@ -217,6 +219,7 @@ class FoldersTests(unittest.TestCase):
         updates = {
             "name": "חדש", "date": "2026-09-12", "time": "12:30",
             "description": "תיאור חדש", "content": "תוכן חדש",
+            "summary": "סיכום מחשבות חדש",
         }
         updated = self.store.update_document(folder["id"], document["id"], updates)
         reloaded = Folders(self.store.path).get(folder["id"])["documents"][0]
@@ -228,10 +231,12 @@ class FoldersTests(unittest.TestCase):
         self.assertEqual(reloaded["files"], files)
         self.assertGreater(reloaded["updated_at"], document["updated_at"])
         cleared = self.store.update_document(
-            folder["id"], document["id"], {"time": "", "description": "", "content": ""}
+            folder["id"],
+            document["id"],
+            {"time": "", "description": "", "content": "", "summary": ""},
         )
         self.assertEqual(cleared["name"], updates["name"])
-        for key in ("time", "description", "content"):
+        for key in ("time", "description", "content", "summary"):
             self.assertEqual(cleared[key], "")
 
     def test_imports_whatsapp_chat_from_attachment(self):

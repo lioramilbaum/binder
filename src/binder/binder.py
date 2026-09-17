@@ -123,7 +123,7 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
 
-        allowed_keys = {"name", "date", "time", "description", "content"}
+        allowed_keys = {"name", "date", "time", "description", "content", "summary"}
         updates = {k: v for k, v in payload.items() if k in allowed_keys}
 
         if not updates:
@@ -141,7 +141,11 @@ class Binder(BaseHTTPRequestHandler):
                 {"error": "יש להזין שם ותאריך למסמך"}, HTTPStatus.BAD_REQUEST
             )
             return
-        if len(updates.get("name", "")) > 200 or len(updates.get("description", "")) > 1000:
+        if (
+            len(updates.get("name", "")) > 200
+            or len(updates.get("description", "")) > 1000
+            or len(updates.get("summary", "")) > 1000
+        ):
             self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
             return
 
@@ -184,6 +188,7 @@ class Binder(BaseHTTPRequestHandler):
         document_time = str(payload.get("time", "")).strip()
         description = str(payload.get("description", "")).strip()
         content = str(payload.get("content", "")).strip()
+        summary = str(payload.get("summary", "")).strip()
 
         if not name or not document_date:
             self._send_json(
@@ -201,12 +206,18 @@ class Binder(BaseHTTPRequestHandler):
             except ValueError:
                 self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
-        if len(name) > 200 or len(description) > 1000:
+        if len(name) > 200 or len(description) > 1000 or len(summary) > 1000:
             self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
             return
 
         document = self.store.create_document(
-            folder_id, document_date, name, description, content, document_time
+            folder_id,
+            document_date,
+            name,
+            description,
+            content,
+            document_time,
+            summary=summary,
         )
         if document is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)

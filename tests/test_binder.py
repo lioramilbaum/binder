@@ -93,6 +93,7 @@ class BinderEditTests(unittest.TestCase):
         payload = {
             "name": " Updated ", "date": "2026-09-12", "time": "10:30",
             "description": "Description", "content": "Content",
+            "summary": "Summary",
         }
         handler = self.patch(payload)
         handler.store.update_document.assert_called_once_with(
@@ -103,7 +104,7 @@ class BinderEditTests(unittest.TestCase):
     def test_rejects_invalid_edits_without_writing(self):
         for payload in (
             {"name": " "}, {"name": "x" * 201},
-            {"description": "x" * 1001}, {"date": ""},
+            {"description": "x" * 1001}, {"summary": "x" * 1001}, {"date": ""},
             {"date": "2026-02-30"}, {"time": "25:00"},
             {"content": None}, {"time": False}, {"name": []},
             {}, [], {"id": "replacement"},
@@ -114,7 +115,7 @@ class BinderEditTests(unittest.TestCase):
                 self.assertEqual(handler._send_json.call_args.args[1], 400)
 
     def test_optional_fields_can_be_cleared(self):
-        payload = {"time": "", "description": "", "content": ""}
+        payload = {"time": "", "description": "", "content": "", "summary": ""}
         handler = self.patch(payload)
         handler.store.update_document.assert_called_once_with(
             "folder", "document", payload

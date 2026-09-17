@@ -67,13 +67,14 @@ class Folders:
         description: str = "",
         content: str = "",
         time: str = "",
+        summary: str = "",
     ) -> Optional[dict[str, object]]:
         folders = self.list()
         for folder in folders:
             if folder["id"] != folder_id:
                 continue
             document = Document.create(
-                date, name, description, content, time=time
+                date, name, description, content, time=time, summary=summary
             ).to_dict()
             self._write_document(folder_id, document)
             document_summary = {
@@ -190,7 +191,7 @@ class Folders:
                 document.setdefault("time", "")
                 document.setdefault("files", [])
 
-                for key in ["name", "date", "time", "description", "content"]:
+                for key in ["name", "date", "time", "description", "content", "summary"]:
                     if key in updates:
                         document[key] = str(updates[key]).strip()
 

@@ -11,6 +11,7 @@ class DocumentTests(unittest.TestCase):
             "  שיחה עם נציג הוועד  ",
             "  דני: שלום\nאני: היי  ",
             time="14:35",
+            summary="  צריך לבדוק תקציב  ",
         )
 
         self.assertEqual(document.date, "2026-08-30")
@@ -18,6 +19,7 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(document.name, "שיחת WhatsApp")
         self.assertEqual(document.description, "שיחה עם נציג הוועד")
         self.assertEqual(document.content, "דני: שלום\nאני: היי")
+        self.assertEqual(document.summary, "צריך לבדוק תקציב")
         self.assertTrue(document.id)
         self.assertEqual(document.created_at, document.updated_at)
 
@@ -32,6 +34,7 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(result["content"], "")
         self.assertEqual(result["time"], "")
         self.assertEqual(result["files"], [])
+        self.assertEqual(result["summary"], "")
 
 
 if __name__ == "__main__":
