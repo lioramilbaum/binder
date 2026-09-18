@@ -1,9 +1,12 @@
+import os
 from http.server import ThreadingHTTPServer
 
 from .binder import Binder
 
 
-def run(host: str = "127.0.0.1", port: int = 8000) -> None:
+def run(host: str | None = None, port: int | None = None) -> None:
+    host = host or os.environ.get("BINDER_HOST", "127.0.0.1")
+    port = port or int(os.environ.get("BINDER_PORT", "8000"))
     server = ThreadingHTTPServer((host, port), Binder)
     print(f"Binder running at http://{host}:{port}")
     try:

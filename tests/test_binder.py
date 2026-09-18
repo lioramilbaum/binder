@@ -3,7 +3,7 @@ import json
 from unittest.mock import Mock, patch
 import unittest
 
-from src.binder.binder import Binder
+from binder.binder import Binder
 
 
 class BinderConfigTests(unittest.TestCase):
@@ -15,27 +15,27 @@ class BinderConfigTests(unittest.TestCase):
         return handler
 
     def test_returns_empty_google_config_by_default(self):
-        with patch("src.binder.binder.GOOGLE_CLIENT_ID", ""), patch(
-            "src.binder.binder.GOOGLE_API_KEY", ""
-        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
+        with patch("binder.binder.GOOGLE_CLIENT_ID", ""), patch(
+            "binder.binder.GOOGLE_API_KEY", ""
+        ), patch("binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
             handler = self.get_config()
         handler._send_json.assert_called_once_with(
             {"googleClientId": "", "googleApiKey": ""}
         )
 
     def test_hides_credentials_when_toggle_is_disabled(self):
-        with patch("src.binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
-            "src.binder.binder.GOOGLE_API_KEY", "api-key"
-        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
+        with patch("binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
+            "binder.binder.GOOGLE_API_KEY", "api-key"
+        ), patch("binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", False):
             handler = self.get_config()
         handler._send_json.assert_called_once_with(
             {"googleClientId": "", "googleApiKey": ""}
         )
 
     def test_returns_configured_google_credentials_when_toggle_is_enabled(self):
-        with patch("src.binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
-            "src.binder.binder.GOOGLE_API_KEY", "api-key"
-        ), patch("src.binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", True):
+        with patch("binder.binder.GOOGLE_CLIENT_ID", "client-id"), patch(
+            "binder.binder.GOOGLE_API_KEY", "api-key"
+        ), patch("binder.binder.GOOGLE_DRIVE_IMPORT_ENABLED", True):
             handler = self.get_config()
         handler._send_json.assert_called_once_with(
             {"googleClientId": "client-id", "googleApiKey": "api-key"}
@@ -120,6 +120,35 @@ class BinderEditTests(unittest.TestCase):
         handler.store.update_document.assert_called_once_with(
             "folder", "document", payload
         )
+
+
+class BinderAttachmentTests(unittest.TestCase):
+    def test_sends_attachment_bytes_from_the_store(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder/documents/document/files/file"
+        handler.store = Mock()
+        handler.store.get_file.return_value = (b"image bytes", "image/jpeg", "photo.jpg")
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        handler.wfile = io.BytesIO()
+
+        handler.do_GET()
+
+        handler.store.get_file.assert_called_once_with("folder", "document", "file")
+        handler.send_header.assert_any_call("Content-Type", "image/jpeg")
+        self.assertEqual(handler.wfile.getvalue(), b"image bytes")
+
+    def test_missing_attachment_returns_404(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder/documents/document/files/file"
+        handler.store = Mock()
+        handler.store.get_file.return_value = None
+        handler.send_error = Mock()
+
+        handler.do_GET()
+
+        handler.send_error.assert_called_once()
 
 
 class BinderDeleteTests(unittest.TestCase):

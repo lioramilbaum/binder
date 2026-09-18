@@ -4,3 +4,6 @@ data/
 .DS_Store
 .vscode/
 .run/
+.venv/
+.env
+.pytest_cache/

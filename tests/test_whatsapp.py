@@ -2,7 +2,7 @@ import io
 import unittest
 import zipfile
 
-from src.binder.whatsapp import WhatsAppChat
+from binder.whatsapp import WhatsAppChat
 
 
 CHAT_TEXT = """30/08/2026, 14:35 - דנה: אפשר לדבר? 😊

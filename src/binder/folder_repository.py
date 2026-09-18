@@ -1,0 +1,325 @@
+"""Database persistence for folders, documents, and their attachments."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import BinaryIO, Union
+from uuid import uuid4
+
+from sqlalchemy.orm import Session, selectinload, sessionmaker
+
+from .database import session_scope
+from .large_objects import create_large_object, read_large_object
+from .models import Document, DocumentFile, Folder
+from .whatsapp import WhatsAppChat
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _file_to_dict(file: DocumentFile) -> dict[str, object]:
+    return {
+        "id": file.id,
+        "name": file.name,
+        "content_type": file.content_type,
+        "size": file.size,
+    }
+
+
+def _document_summary(document: Document) -> dict[str, object]:
+    return {
+        "id": document.id,
+        "date": document.date,
+        "time": document.time,
+        "name": document.name,
+        "description": document.description,
+        "summary": document.summary,
+        "created_at": document.created_at,
+        "updated_at": document.updated_at,
+    }
+
+
+def _document_to_dict(document: Document) -> dict[str, object]:
+    result = _document_summary(document)
+    result["content"] = document.content
+    result["files"] = [_file_to_dict(file) for file in document.files]
+    if document.whatsapp_chat is not None:
+        result["whatsapp_chat"] = document.whatsapp_chat
+    if document.whatsapp_chat_file_id is not None:
+        result["whatsapp_chat_file_id"] = document.whatsapp_chat_file_id
+    return result
+
+
+def _document_sort_key(document: Document) -> tuple[str, str, str]:
+    return (document.date or "", document.time or "", document.created_at or "")
+
+
+def list_folders(factory: sessionmaker[Session]) -> list[dict[str, object]]:
+    """Return all folders, newest-updated first, with lightweight document summaries."""
+
+    with factory() as session:
+        folders = (
+            session.query(Folder)
+            .options(selectinload(Folder.documents))
+            .order_by(Folder.updated_at.desc())
+            .all()
+        )
+        return [
+            {
+                "id": folder.id,
+                "name": folder.name,
+                "description": folder.description,
+                "created_at": folder.created_at,
+                "updated_at": folder.updated_at,
+                "documents": [_document_summary(document) for document in folder.documents],
+            }
+            for folder in folders
+        ]
+
+
+def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, object] | None:
+    """Return a folder with its documents fully populated, sorted newest first."""
+
+    with factory() as session:
+        folder = (
+            session.query(Folder)
+            .options(selectinload(Folder.documents).selectinload(Document.files))
+            .filter(Folder.id == folder_id)
+            .one_or_none()
+        )
+        if folder is None:
+            return None
+        documents = sorted(folder.documents, key=_document_sort_key, reverse=True)
+        return {
+            "id": folder.id,
+            "name": folder.name,
+            "description": folder.description,
+            "created_at": folder.created_at,
+            "updated_at": folder.updated_at,
+            "documents": [_document_to_dict(document) for document in documents],
+        }
+
+
+def create_folder(
+    factory: sessionmaker[Session], name: str, description: str = ""
+) -> dict[str, object]:
+    """Create a new, empty folder."""
+
+    now = _now()
+    folder = Folder(
+        id=str(uuid4()),
+        name=name.strip(),
+        description=description.strip(),
+        created_at=now,
+        updated_at=now,
+    )
+    with session_scope(factory) as session:
+        session.add(folder)
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "description": folder.description,
+        "created_at": folder.created_at,
+        "updated_at": folder.updated_at,
+        "documents": [],
+    }
+
+
+def create_document(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    date: str,
+    name: str,
+    description: str = "",
+    content: str = "",
+    time: str = "",
+    summary: str = "",
+) -> dict[str, object] | None:
+    """Create a document in a folder, or return ``None`` if the folder is missing."""
+
+    now = _now()
+    with session_scope(factory) as session:
+        folder = session.get(Folder, folder_id)
+        if folder is None:
+            return None
+        document = Document(
+            id=str(uuid4()),
+            folder_id=folder_id,
+            date=date,
+            time=time,
+            name=name.strip(),
+            description=description.strip(),
+            content=content.strip(),
+            summary=summary.strip(),
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(document)
+        folder.updated_at = now
+        session.flush()
+        return _document_to_dict(document)
+
+
+def update_document(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    document_id: str,
+    updates: dict[str, str],
+) -> dict[str, object] | None:
+    """Apply field updates to a document, or return ``None`` if it doesn't exist."""
+
+    with session_scope(factory) as session:
+        document = (
+            session.query(Document)
+            .options(selectinload(Document.files))
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return None
+        for key in ("name", "date", "time", "description", "content", "summary"):
+            if key in updates:
+                setattr(document, key, str(updates[key]).strip())
+        now = _now()
+        document.updated_at = now
+        document.folder.updated_at = now
+        session.flush()
+        return _document_to_dict(document)
+
+
+def _read_upload_bytes(content: Union[bytes, BinaryIO]) -> bytes:
+    if isinstance(content, bytes):
+        return content
+    content.seek(0)
+    return content.read()
+
+
+def _upload_size(content: Union[bytes, BinaryIO]) -> int:
+    if isinstance(content, bytes):
+        return len(content)
+    content.seek(0, 2)
+    size = content.tell()
+    content.seek(0)
+    return size
+
+
+_WHATSAPP_CANDIDATE_SUFFIXES = (".txt", ".zip")
+
+
+def add_files(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    document_id: str,
+    uploads: list[tuple[str, str, Union[bytes, BinaryIO]]],
+) -> list[dict[str, object]] | None:
+    """Store attachments for a document, returning their metadata."""
+
+    with session_scope(factory) as session:
+        document = (
+            session.query(Document)
+            .options(selectinload(Document.files))
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return None
+
+        saved_files: list[dict[str, object]] = []
+        imported_chat = None
+        imported_chat_file_id = None
+        for filename, content_type, content in uploads:
+            # Only buffer the file fully in memory when it could be a
+            # WhatsApp export (small by nature); anything else is streamed
+            # straight into a large object, since attachments here can be
+            # gigabytes in size.
+            is_chat_candidate = (
+                imported_chat is None
+                and Path(filename).suffix.lower() in _WHATSAPP_CANDIDATE_SUFFIXES
+            )
+            if is_chat_candidate:
+                data = _read_upload_bytes(content)
+                size = len(data)
+                oid = create_large_object(session, data)
+            else:
+                size = _upload_size(content)
+                oid = create_large_object(session, content)
+
+            file = DocumentFile(
+                id=str(uuid4()),
+                document_id=document_id,
+                name=Path(filename).name,
+                content_type=content_type or "application/octet-stream",
+                size=size,
+                data_oid=oid,
+                created_at=_now(),
+            )
+            session.add(file)
+            # Flush each attachment individually: batching several large
+            # rows into one multi-row INSERT can break the Postgres wire
+            # protocol (observed as "invalid message length").
+            session.flush()
+            saved_files.append(_file_to_dict(file))
+            if is_chat_candidate:
+                candidate = WhatsAppChat.from_file(filename, data)
+                if candidate is not None:
+                    imported_chat = candidate
+                    imported_chat_file_id = file.id
+
+        if imported_chat is not None:
+            same_day_chat = imported_chat.for_date(document.date)
+            if same_day_chat.messages:
+                document.whatsapp_chat = same_day_chat.to_dict()
+                document.whatsapp_chat_file_id = imported_chat_file_id
+        document.updated_at = _now()
+        session.flush()
+        return saved_files
+
+
+def remove_file(
+    factory: sessionmaker[Session], folder_id: str, document_id: str, file_id: str
+) -> dict[str, object] | None:
+    """Delete an attachment, returning the updated document, or ``None`` if not found."""
+
+    with session_scope(factory) as session:
+        document = (
+            session.query(Document)
+            .options(selectinload(Document.files))
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return None
+        file = next((item for item in document.files if item.id == file_id), None)
+        if file is None:
+            return None
+        document.files.remove(file)
+        session.delete(file)
+        if document.whatsapp_chat_file_id == file_id:
+            document.whatsapp_chat = None
+            document.whatsapp_chat_file_id = None
+        document.updated_at = _now()
+        session.flush()
+        return _document_to_dict(document)
+
+
+def get_file(
+    factory: sessionmaker[Session], folder_id: str, document_id: str, file_id: str
+) -> tuple[bytes, str, str] | None:
+    """Return an attachment's bytes, content type, and name."""
+
+    with factory() as session:
+        file = (
+            session.query(DocumentFile)
+            .join(Document)
+            .filter(
+                DocumentFile.id == file_id,
+                DocumentFile.document_id == document_id,
+                Document.folder_id == folder_id,
+            )
+            .one_or_none()
+        )
+        if file is None:
+            return None
+        return read_large_object(session, file.data_oid), file.content_type, file.name

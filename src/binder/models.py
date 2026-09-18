@@ -1,0 +1,73 @@
+"""Folder, document, and attachment models."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .database import Base
+
+
+class Folder(Base):
+    """A top-level collection of documents."""
+
+    __tablename__ = "folders"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[str] = mapped_column(String(64), index=True)
+
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan"
+    )
+
+
+class Document(Base):
+    """A single document stored in a folder."""
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id"), index=True)
+    date: Mapped[str] = mapped_column(String(32), index=True)
+    time: Mapped[str] = mapped_column(String(16), default="")
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text, default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[str] = mapped_column(String(64))
+    whatsapp_chat: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    whatsapp_chat_file_id: Mapped[str | None] = mapped_column(Text, default=None)
+
+    folder: Mapped[Folder] = relationship(back_populates="documents")
+    files: Mapped[list["DocumentFile"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentFile.created_at",
+    )
+
+
+class DocumentFile(Base):
+    """An attachment's metadata, owned by a document.
+
+    The bytes themselves live in a PostgreSQL large object (referenced by
+    ``data_oid``), not in this row: a plain column value is capped at 1 GiB,
+    and attachments here can exceed that.
+    """
+
+    __tablename__ = "document_files"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    content_type: Mapped[str] = mapped_column(Text)
+    size: Mapped[int] = mapped_column(Integer)
+    data_oid: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[str] = mapped_column(String(64))
+
+    document: Mapped[Document] = relationship(back_populates="files")

@@ -5,40 +5,62 @@ and supports right-to-left text.
 
 ## Running the application
 
-Python 3.9 or later is required. No external packages need to be installed.
+Python 3.11 or later is required, along with [`uv`](https://docs.astral.sh/uv/)
+for dependency management. Folders, documents, and attachments are stored in
+PostgreSQL.
+
+The easiest way to run everything locally is Docker Compose, which starts both
+the app and a PostgreSQL database and applies schema migrations automatically:
 
 ```bash
-python3 -m src.binder.app
+docker compose up
 ```
 
 Then open [http://localhost:8000](http://localhost:8000) in a browser.
 
-By default, folders are stored in `data/folders.json`. The storage location can
-be changed with the `BINDER_DATA_DIR` environment variable—for example, to use
-a directory synchronized with Google Drive:
+To run outside Docker, start a PostgreSQL instance yourself, set
+`DATABASE_URL`, apply migrations, then start the server:
 
 ```bash
-BINDER_DATA_DIR="/path/to/Google Drive/Binder" python3 -m src.binder.app
+uv sync
+export DATABASE_URL="postgresql://user:password@localhost:5432/binder"
+uv run alembic upgrade head
+uv run binder-server
 ```
 
-Uploads are streamed to disk and may be up to 2 GB by default. Set
+Attachment bytes are stored as PostgreSQL large objects rather than plain
+column values, since a single `bytea`/`text` value is capped at 1 GiB and
+attachments here can exceed that. A database trigger (`lo_manage`, from the
+`lo` extension) automatically deletes the underlying large object whenever
+the row referencing it is updated or removed, so attachment cleanup needs no
+extra code.
+
+Uploads are streamed into the database and may be up to 2 GB by default. Set
 `BINDER_MAX_UPLOAD_MB` to change the maximum request size, for example:
 
 ```bash
-BINDER_MAX_UPLOAD_MB=4096 python3 -m src.binder.app
+BINDER_MAX_UPLOAD_MB=4096 uv run binder-server
 ```
 
 The limit applies to the combined size of all files selected in one upload.
-
-Each document is stored as a separate JSON file under
-`data/documents/<folder-id>/`, with its attachments stored alongside it. The
-entire `data/` directory is ignored by Git, so personal folders, documents, and
-uploaded files are never included in commits.
 
 WhatsApp chat exports in `.txt` or `.zip` format are detected automatically
 when attached to a document. Binder preserves the original export and renders
 the parsed messages as a chat conversation. Android and iPhone export formats
 can vary by locale, so the original file remains the authoritative source.
+
+### Importing data from the old file-based storage
+
+Earlier versions of Binder stored folders in `data/folders.json` and documents
+under `data/documents/<folder-id>/`. If you have such a `data/` directory,
+import it into PostgreSQL with:
+
+```bash
+uv run binder-import-json --data-dir data
+```
+
+The import is safe to re-run: folders that already exist in the database (by
+id) are skipped.
 
 ## Importing files from Google Drive
 
@@ -59,7 +81,7 @@ behind a toggle, and needs Google API credentials once you turn it on:
 BINDER_GOOGLE_DRIVE_IMPORT_ENABLED=1 \
 BINDER_GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
 BINDER_GOOGLE_API_KEY="your-api-key" \
-python3 -m src.binder.app
+uv run binder-server
 ```
 
 The "יבוא מ-Google Drive" button appears in the document dialog only when
@@ -74,5 +96,17 @@ exported as PDF; every other file type is downloaded as-is.
 ## Running the tests
 
 ```bash
-python3 -m unittest discover -s tests
+uv run pytest
 ```
+
+Folder/document tests run against an in-memory SQLite database. Attachments
+are stored as PostgreSQL large objects (see below), so attachment tests need
+a real, disposable Postgres database and are skipped unless
+`TEST_DATABASE_URL` is set:
+
+```bash
+TEST_DATABASE_URL="postgresql+psycopg://binder:binder_dev@127.0.0.1:5433/binder_test" uv run pytest
+```
+
+Point it at a throwaway database, never a database with real data — its
+tables are dropped and recreated before every test.

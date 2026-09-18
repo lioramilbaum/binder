@@ -1,0 +1,11 @@
+**
+!pyproject.toml
+!src/
+!src/**
+!static/
+!static/**
+!migrations/
+!migrations/**
+!docker-entrypoint.sh
+**/__pycache__/
+**/*.pyc

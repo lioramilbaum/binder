@@ -339,10 +339,9 @@ class Binder(BaseHTTPRequestHandler):
         if result is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        path, attachment = result
-        body = path.read_bytes()
+        body, content_type, _name = result
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", str(attachment["content_type"]))
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
