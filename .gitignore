@@ -7,3 +7,5 @@ data/
 .venv/
 .env
 .pytest_cache/
+.private-backups/
+.postgres-data/

@@ -110,3 +110,21 @@ TEST_DATABASE_URL="postgresql+psycopg://binder:binder_dev@127.0.0.1:5433/binder_
 
 Point it at a throwaway database, never a database with real data — its
 tables are dropped and recreated before every test.
+
+## Data location and backups
+
+PostgreSQL's data folder is a local bind mount (`./.postgres-data`, git-ignored),
+not a Docker volume, so pruning Docker storage cannot delete it. The image is
+pinned to PostgreSQL 18.6 and mounted at `/var/lib/postgresql`; major-version
+upgrades require a database migration, not just changing the tag.
+
+`make backup` writes a timestamped dump (`.private-backups/binder-YYYYmmdd-HHMMSS.dump`,
+readable only by you, git-ignored) and keeps the newest 30; change that with
+`make backup KEEP=10`. Run it before upgrades and anything destructive, and copy
+the folder somewhere off this machine now and then. To restore, load a dump into
+a separate database first, verify it, then intentionally switch `DATABASE_URL`:
+
+```sh
+docker compose exec -T postgres createdb -U binder binder_restore
+docker compose exec -T postgres pg_restore -U binder -d binder_restore --no-owner < .private-backups/binder-<timestamp>.dump
+```
