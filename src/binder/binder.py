@@ -14,10 +14,12 @@ from .config import (
     GOOGLE_API_KEY,
     GOOGLE_CLIENT_ID,
     GOOGLE_DRIVE_IMPORT_ENABLED,
+    LOCALE,
     MAX_UPLOAD_SIZE,
     STATIC_DIR,
 )
 from .folders import Folders
+from .i18n import Translator
 
 
 class Binder(BaseHTTPRequestHandler):
@@ -51,10 +53,18 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json(folder)
             return
         if path == "/":
-            self._send_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
+            page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+            self._send_body(
+                Translator(LOCALE).fill_html(page).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
             return
         if path == "/app.js":
-            self._send_file(STATIC_DIR / "app.js", "text/javascript; charset=utf-8")
+            script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+            self._send_body(
+                Translator(LOCALE).fill_script(script).encode("utf-8"),
+                "text/javascript; charset=utf-8",
+            )
             return
         if path == "/styles.css":
             self._send_file(STATIC_DIR / "styles.css", "text/css; charset=utf-8")
@@ -372,7 +382,9 @@ class Binder(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_file(self, path: Path, content_type: str) -> None:
-        body = path.read_bytes()
+        self._send_body(path.read_bytes(), content_type)
+
+    def _send_body(self, body: bytes, content_type: str) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))

@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from .i18n import DEFAULT_LOCALE, LOCALES
+
 
 PROJECT_ROOT = Path(__file__).parents[2]
 STATIC_DIR = Path(os.environ.get("BINDER_STATIC_DIR", PROJECT_ROOT / "static"))
@@ -21,3 +23,10 @@ GOOGLE_API_KEY = os.environ.get("BINDER_GOOGLE_API_KEY", "")
 GOOGLE_DRIVE_IMPORT_ENABLED = os.environ.get(
     "BINDER_GOOGLE_DRIVE_IMPORT_ENABLED", ""
 ).strip().lower() in {"1", "true", "yes"}
+
+
+LOCALE = os.environ.get("BINDER_LOCALE", DEFAULT_LOCALE).strip() or DEFAULT_LOCALE
+if LOCALE not in LOCALES:
+    raise ValueError(
+        f"Unsupported BINDER_LOCALE {LOCALE!r}; expected one of {sorted(LOCALES)}."
+    )

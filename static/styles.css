@@ -81,7 +81,7 @@ button { cursor: pointer; }
   display: grid;
   min-height: 210px;
   padding: 24px;
-  text-align: right;
+  text-align: start;
   border: 1px solid var(--line);
   border-radius: 12px;
   color: var(--ink);
@@ -114,7 +114,7 @@ button { cursor: pointer; }
 .document-body pre { margin: 16px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; }
 .document-actions { display: flex; gap: 10px; margin-bottom: 16px; margin-top: 10px; }
 .edit-content-button { margin-top: 18px; min-height: 38px; }
-.content-input { min-height: 220px; direction: rtl; }
+.content-input { min-height: 220px; }
 .field-hint { margin: 6px 0 0; color: var(--muted); font-size: .8rem; }
 .file-drop-zone { display: grid; gap: 5px; margin-top: 7px; padding: 22px; text-align: center; border: 2px dashed var(--line); border-radius: 10px; color: var(--muted); background: white; cursor: pointer; transition: border-color .15s, background .15s; }
 .file-drop-zone:hover, .file-drop-zone:focus, .file-drop-zone.dragging { outline: none; border-color: var(--accent); background: rgba(184, 76, 44, .05); }
@@ -144,7 +144,7 @@ button { cursor: pointer; }
   cursor: pointer;
 }
 .attachment-remove:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
-.whatsapp-chat { display: grid; gap: 5px; max-height: 620px; margin-top: 18px; padding: 18px 14px; overflow-y: auto; border-radius: 9px; background-color: #efeae2; background-image: radial-gradient(rgba(70, 90, 80, .08) 1px, transparent 1px); background-size: 18px 18px; direction: rtl; }
+.whatsapp-chat { display: grid; gap: 5px; max-height: 620px; margin-top: 18px; padding: 18px 14px; overflow-y: auto; border-radius: 9px; background-color: #efeae2; background-image: radial-gradient(rgba(70, 90, 80, .08) 1px, transparent 1px); background-size: 18px 18px; }
 .chat-date { justify-self: center; margin: 8px 0; padding: 5px 10px; border-radius: 7px; color: #54656f; background: #f7f8d4; font-size: .74rem; }
 .chat-system-message { justify-self: center; max-width: 82%; padding: 6px 10px; text-align: center; border-radius: 7px; color: #54656f; background: #d9f0f4; font-size: .75rem; }
 .chat-message-row { display: flex; }

@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="he" dir="rtl">
+<html lang="@@lang@@" dir="@@dir@@">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Binder — ניהול מידע</title>
+    <title>@@app_title@@</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="/" aria-label="Binder — דף הבית">
+      <a class="brand" href="/" aria-label="@@brand_home@@">
         <span class="brand-mark" aria-hidden="true">B</span>
         <span>Binder</span>
       </a>
@@ -18,46 +18,46 @@
     <main>
       <div id="home-view">
         <section class="hero">
-          <p class="eyebrow">מרחב העבודה שלך</p>
-          <h1>על איזו תיקייה עובדים?</h1>
-          <p>כל המידע החשוב, מסודר במקום אחד.</p>
-          <button class="primary-button" id="new-folder-button" type="button">+ תיקייה חדשה</button>
+          <p class="eyebrow">@@workspace@@</p>
+          <h1>@@home_heading@@</h1>
+          <p>@@home_tagline@@</p>
+          <button class="primary-button" id="new-folder-button" type="button">@@new_folder@@</button>
         </section>
 
         <section class="folders-section" aria-labelledby="folders-heading">
           <div class="section-heading">
-            <h2 id="folders-heading">התיקיות שלי</h2>
+            <h2 id="folders-heading">@@my_folders@@</h2>
             <span id="folder-count"></span>
           </div>
           <div id="folders" class="folder-grid" aria-live="polite"></div>
           <div id="empty-state" class="empty-state" hidden>
             <div class="empty-icon" aria-hidden="true">⌑</div>
-            <h3>עדיין אין כאן תיקיות</h3>
-            <p>צרו את התיקייה הראשונה והתחילו לאסוף מידע.</p>
+            <h3>@@no_folders@@</h3>
+            <p>@@no_folders_hint@@</p>
           </div>
         </section>
       </div>
 
       <div id="folder-view" hidden>
         <section class="folder-hero">
-          <button class="back-button" id="back-button" type="button">→ חזרה לתיקיות</button>
-          <p class="eyebrow">תיקייה</p>
-          <h1 id="current-folder-name"></h1>
-          <p id="current-folder-description"></p>
+          <button class="back-button" id="back-button" type="button">@@back_to_folders@@</button>
+          <p class="eyebrow">@@folder@@</p>
+          <h1 id="current-folder-name" dir="auto"></h1>
+          <p id="current-folder-description" dir="auto"></p>
         </section>
         <section class="documents-section" aria-labelledby="documents-heading">
           <div class="section-heading">
-            <h2 id="documents-heading">מסמכים</h2>
+            <h2 id="documents-heading">@@documents@@</h2>
             <div class="section-actions">
               <span id="document-count"></span>
-              <button class="primary-button small-button" id="new-document-button" type="button">+ מסמך חדש</button>
+              <button class="primary-button small-button" id="new-document-button" type="button">@@new_document@@</button>
             </div>
           </div>
           <div id="documents" class="document-list" aria-live="polite"></div>
           <div id="documents-empty-state" class="empty-state" hidden>
             <div class="empty-icon document-empty-icon" aria-hidden="true">▤</div>
-            <h3>עדיין אין מסמכים בתיקייה</h3>
-            <p>כאן תופיע רשימת המסמכים שתוסיפו לתיקייה.</p>
+            <h3>@@no_documents@@</h3>
+            <p>@@no_documents_hint@@</p>
           </div>
         </section>
       </div>
@@ -67,19 +67,19 @@
       <form id="folder-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow">תיקייה חדשה</p>
-            <h2>מה נרצה לעקוב?</h2>
+            <p class="eyebrow">@@new_folder_eyebrow@@</p>
+            <h2>@@folder_dialog_title@@</h2>
           </div>
-          <button class="icon-button" id="close-dialog" type="button" aria-label="סגירה">×</button>
+          <button class="icon-button" id="close-dialog" type="button" aria-label="@@close@@">×</button>
         </div>
-        <label for="folder-name">שם התיקייה</label>
-        <input id="folder-name" name="name" maxlength="100" required autofocus placeholder="לדוגמה: ועד הבית">
-        <label for="folder-description">תיאור קצר <span>(לא חובה)</span></label>
-        <textarea id="folder-description" name="description" maxlength="500" rows="3" placeholder="כמה מילים שיעזרו לזכור במה מדובר"></textarea>
+        <label for="folder-name">@@folder_name@@</label>
+        <input id="folder-name" dir="auto" name="name" maxlength="100" required autofocus placeholder="@@folder_name_placeholder@@">
+        <label for="folder-description">@@short_description@@ <span>@@optional@@</span></label>
+        <textarea id="folder-description" dir="auto" name="description" maxlength="500" rows="3" placeholder="@@folder_description_placeholder@@"></textarea>
         <p id="form-error" class="error" role="alert"></p>
         <div class="dialog-actions">
-          <button class="secondary-button" id="cancel-dialog" type="button">ביטול</button>
-          <button class="primary-button" type="submit">יצירת תיקייה</button>
+          <button class="secondary-button" id="cancel-dialog" type="button">@@cancel@@</button>
+          <button class="primary-button" type="submit">@@create_folder@@</button>
         </div>
       </form>
     </dialog>
@@ -88,42 +88,42 @@
       <form id="document-form">
         <div class="dialog-heading">
           <div>
-            <p class="eyebrow" id="document-dialog-eyebrow">מסמך חדש</p>
-            <h2 id="document-dialog-title">הוספת מידע לתיקייה</h2>
+            <p class="eyebrow" id="document-dialog-eyebrow">@@new_document_eyebrow@@</p>
+            <h2 id="document-dialog-title">@@new_document_title@@</h2>
           </div>
-          <button class="icon-button" id="close-document-dialog" type="button" aria-label="סגירה">×</button>
+          <button class="icon-button" id="close-document-dialog" type="button" aria-label="@@close@@">×</button>
         </div>
         <div class="date-time-fields">
           <div>
-            <label for="document-date">תאריך</label>
+            <label for="document-date">@@date@@</label>
             <input id="document-date" name="date" type="date" required>
           </div>
           <div>
-            <label for="document-time">שעה <span>(לא חובה)</span></label>
+            <label for="document-time">@@time@@ <span>@@optional@@</span></label>
             <input id="document-time" name="time" type="time">
           </div>
         </div>
-        <label for="document-name">שם המסמך</label>
-        <input id="document-name" name="name" maxlength="200" required placeholder="לדוגמה: שיחת WhatsApp עם דני">
-        <label for="document-description">תיאור קצר <span>(לא חובה)</span></label>
-        <textarea id="document-description" name="description" maxlength="1000" rows="2" placeholder="הקשר או הערה על המסמך"></textarea>
-        <label for="document-content">תוכן</label>
-        <textarea id="document-content" class="content-input" name="content" rows="10" placeholder="אפשר להקליד או להדביק כאן שיחה, מסמך או כל תוכן אחר"></textarea>
-        <label for="document-summary">סיכום מחשבות ורעיונות <span>(לא חובה)</span></label>
-        <textarea id="document-summary" name="summary" maxlength="1000" rows="3" placeholder="סיכום אישי של מחשבות, רעיונות או מסקנות לגבי המסמך"></textarea>
-        <label for="document-files">קבצים <span>(לא חובה, עד 50MB יחד)</span></label>
+        <label for="document-name">@@document_name@@</label>
+        <input id="document-name" dir="auto" name="name" maxlength="200" required placeholder="@@document_name_placeholder@@">
+        <label for="document-description">@@short_description@@ <span>@@optional@@</span></label>
+        <textarea id="document-description" dir="auto" name="description" maxlength="1000" rows="2" placeholder="@@document_description_placeholder@@"></textarea>
+        <label for="document-content">@@content@@</label>
+        <textarea id="document-content" dir="auto" class="content-input" name="content" rows="10" placeholder="@@content_placeholder@@"></textarea>
+        <label for="document-summary">@@summary@@ <span>@@optional@@</span></label>
+        <textarea id="document-summary" dir="auto" name="summary" maxlength="1000" rows="3" placeholder="@@summary_placeholder@@"></textarea>
+        <label for="document-files">@@files@@ <span>@@files_optional@@</span></label>
         <div class="file-drop-zone" id="document-file-drop-zone" role="button" tabindex="0">
           <input id="document-files" name="files" type="file" multiple hidden>
-          <strong>גררו קבצים לכאן</strong>
-          <span>או לחצו לבחירת תמונות, קבצים או ייצוא WhatsApp</span>
-          <button class="secondary-button small-button" id="google-drive-import-button" type="button" hidden>יבוא מ-Google Drive</button>
+          <strong>@@drop_files@@</strong>
+          <span>@@drop_files_hint@@</span>
+          <button class="secondary-button small-button" id="google-drive-import-button" type="button" hidden>@@google_drive_import@@</button>
           <div class="selected-files" id="document-selected-files"></div>
         </div>
-        <p class="field-hint">אפשר גם להדביק תמונה ישירות בשדה התוכן.</p>
+        <p class="field-hint">@@paste_hint@@</p>
         <p id="document-form-error" class="error" role="alert"></p>
         <div class="dialog-actions">
-          <button class="secondary-button" id="cancel-document-dialog" type="button">ביטול</button>
-          <button class="primary-button" type="submit">שמירת מסמך</button>
+          <button class="secondary-button" id="cancel-document-dialog" type="button">@@cancel@@</button>
+          <button class="primary-button" type="submit">@@save_document@@</button>
         </div>
       </form>
     </dialog>

@@ -62,6 +62,22 @@ uv run binder-import-json --data-dir data
 The import is safe to re-run: folders that already exist in the database (by
 id) are skipped.
 
+## Interface language
+
+The page is Hebrew by default (`<html lang="he" dir="rtl">`). All interface
+text lives in `src/binder/i18n.py`, with Hebrew and English tables that must
+define the same keys. `static/index.html` and `static/app.js` reference strings
+as `@@key@@` markers, which the server fills in when it serves them, so a
+missing key fails the request rather than showing up in the browser. Set
+`BINDER_LOCALE=en` to serve the English, left-to-right page. To add a language,
+add a table and a `LOCALES` entry; `tests/test_i18n.py` checks that every key
+and placeholder is present.
+
+Only interface text is translated. Folder names, descriptions, document text,
+file names and chat messages are shown exactly as written, and each one picks
+its own text direction. Server API error messages are not part of the
+translated interface.
+
 ## Importing files from Google Drive
 
 The document upload dialog can import files directly from Google Drive

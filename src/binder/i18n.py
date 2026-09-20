@@ -1,0 +1,233 @@
+"""User-interface strings for the static pages, keyed by locale.
+
+Only UI chrome lives here. Folder names, document text, file names and chat
+messages are stored and rendered in whatever language they were written in.
+"""
+
+import html
+import json
+import re
+from dataclasses import dataclass
+from typing import Mapping
+
+DEFAULT_LOCALE = "he"
+
+_HEBREW: dict[str, str] = {
+    "app_title": "Binder — ניהול מידע",
+    "folder_title": "{name} — Binder",
+    "date_locale": "he-IL",
+    "brand_home": "Binder — דף הבית",
+    # Home view.
+    "workspace": "מרחב העבודה שלך",
+    "home_heading": "על איזו תיקייה עובדים?",
+    "home_tagline": "כל המידע החשוב, מסודר במקום אחד.",
+    "new_folder": "+ תיקייה חדשה",
+    "my_folders": "התיקיות שלי",
+    "no_folders": "עדיין אין כאן תיקיות",
+    "no_folders_hint": "צרו את התיקייה הראשונה והתחילו לאסוף מידע.",
+    "folders_count_one": "תיקייה אחת",
+    "folders_count_other": "{count} תיקיות",
+    "no_description": "ללא תיאור",
+    "updated": "עודכן {date}",
+    "load_folders_failed": "לא הצלחנו לטעון את התיקיות. נסו לרענן את העמוד.",
+    # Folder view.
+    "back_to_folders": "→ חזרה לתיקיות",
+    "folder": "תיקייה",
+    "documents": "מסמכים",
+    "new_document": "+ מסמך חדש",
+    "no_documents": "עדיין אין מסמכים בתיקייה",
+    "no_documents_hint": "כאן תופיע רשימת המסמכים שתוסיפו לתיקייה.",
+    "documents_count_one": "מסמך אחד",
+    "documents_count_other": "{count} מסמכים",
+    "edit_document": "עריכת מסמך",
+    "show_whatsapp": "הצגת שיחת WhatsApp",
+    "hide_whatsapp": "הסתרת שיחת WhatsApp",
+    "remove_file": "הסרת קובץ",
+    "confirm_delete_file": 'למחוק את הקובץ "{name}"?',
+    "delete_file_failed": "מחיקת הקובץ נכשלה.",
+    # Folder dialog.
+    "new_folder_eyebrow": "תיקייה חדשה",
+    "folder_dialog_title": "מה נרצה לעקוב?",
+    "close": "סגירה",
+    "folder_name": "שם התיקייה",
+    "folder_name_placeholder": "לדוגמה: ועד הבית",
+    "short_description": "תיאור קצר",
+    "optional": "(לא חובה)",
+    "folder_description_placeholder": "כמה מילים שיעזרו לזכור במה מדובר",
+    "cancel": "ביטול",
+    "create_folder": "יצירת תיקייה",
+    # Document dialog.
+    "new_document_eyebrow": "מסמך חדש",
+    "new_document_title": "הוספת מידע לתיקייה",
+    "edit_document_eyebrow": "עריכת מסמך",
+    "edit_document_title": "עדכון פרטי המסמך",
+    "date": "תאריך",
+    "time": "שעה",
+    "document_name": "שם המסמך",
+    "document_name_placeholder": "לדוגמה: שיחת WhatsApp עם דני",
+    "document_description_placeholder": "הקשר או הערה על המסמך",
+    "content": "תוכן",
+    "content_placeholder": "אפשר להקליד או להדביק כאן שיחה, מסמך או כל תוכן אחר",
+    "summary": "סיכום מחשבות ורעיונות",
+    "summary_placeholder": "סיכום אישי של מחשבות, רעיונות או מסקנות לגבי המסמך",
+    "files": "קבצים",
+    "files_optional": "(לא חובה, עד 50MB יחד)",
+    "drop_files": "גררו קבצים לכאן",
+    "drop_files_hint": "או לחצו לבחירת תמונות, קבצים או ייצוא WhatsApp",
+    "google_drive_import": "יבוא מ-Google Drive",
+    "paste_hint": "אפשר גם להדביק תמונה ישירות בשדה התוכן.",
+    "save_document": "שמירת מסמך",
+    "save_changes": "שמירת שינויים",
+    "saving": "שומר…",
+    "save_failed": "השמירה נכשלה. יש להפעיל מחדש את השרת ולנסות שוב.",
+    "connect_failed": "לא ניתן להתחבר לשרת. ודאו שהשרת פועל ונסו שוב.",
+    # Uploads and Google Drive.
+    "upload_failed": "העלאת הקבצים נכשלה.",
+    "script_load_failed": "טעינת {src} נכשלה.",
+    "google_login_failed": "ההתחברות ל-Google Drive נכשלה.",
+    "google_download_failed": 'הורדת "{name}" מ-Google Drive נכשלה.',
+    "downloading_files": "מוריד קבצים…",
+    "google_import_failed": "יבוא מ-Google Drive נכשל.",
+}
+
+_ENGLISH: dict[str, str] = {
+    "app_title": "Binder — information manager",
+    "folder_title": "{name} — Binder",
+    "date_locale": "en-US",
+    "brand_home": "Binder — home",
+    # Home view.
+    "workspace": "Your workspace",
+    "home_heading": "Which folder are you working on?",
+    "home_tagline": "All the important information, in one place.",
+    "new_folder": "+ New folder",
+    "my_folders": "My folders",
+    "no_folders": "No folders here yet",
+    "no_folders_hint": "Create your first folder and start collecting information.",
+    "folders_count_one": "1 folder",
+    "folders_count_other": "{count} folders",
+    "no_description": "No description",
+    "updated": "Updated {date}",
+    "load_folders_failed": "We couldn't load the folders. Try refreshing the page.",
+    # Folder view.
+    "back_to_folders": "← Back to folders",
+    "folder": "Folder",
+    "documents": "Documents",
+    "new_document": "+ New document",
+    "no_documents": "No documents in this folder yet",
+    "no_documents_hint": "The documents you add to the folder will be listed here.",
+    "documents_count_one": "1 document",
+    "documents_count_other": "{count} documents",
+    "edit_document": "Edit document",
+    "show_whatsapp": "Show WhatsApp chat",
+    "hide_whatsapp": "Hide WhatsApp chat",
+    "remove_file": "Remove file",
+    "confirm_delete_file": 'Delete the file "{name}"?',
+    "delete_file_failed": "Deleting the file failed.",
+    # Folder dialog.
+    "new_folder_eyebrow": "New folder",
+    "folder_dialog_title": "What would you like to track?",
+    "close": "Close",
+    "folder_name": "Folder name",
+    "folder_name_placeholder": "For example: Building committee",
+    "short_description": "Short description",
+    "optional": "(optional)",
+    "folder_description_placeholder": "A few words to help you remember what this is about",
+    "cancel": "Cancel",
+    "create_folder": "Create folder",
+    # Document dialog.
+    "new_document_eyebrow": "New document",
+    "new_document_title": "Add information to the folder",
+    "edit_document_eyebrow": "Edit document",
+    "edit_document_title": "Update the document details",
+    "date": "Date",
+    "time": "Time",
+    "document_name": "Document name",
+    "document_name_placeholder": "For example: WhatsApp chat with Danny",
+    "document_description_placeholder": "Context or a note about the document",
+    "content": "Content",
+    "content_placeholder": "Type or paste a conversation, document or any other content here",
+    "summary": "Summary of thoughts and ideas",
+    "summary_placeholder": "A personal summary of thoughts, ideas or conclusions about the document",
+    "files": "Files",
+    "files_optional": "(optional, up to 50MB in total)",
+    "drop_files": "Drag files here",
+    "drop_files_hint": "or click to choose images, files or a WhatsApp export",
+    "google_drive_import": "Import from Google Drive",
+    "paste_hint": "You can also paste an image directly into the content field.",
+    "save_document": "Save document",
+    "save_changes": "Save changes",
+    "saving": "Saving…",
+    "save_failed": "Saving failed. Restart the server and try again.",
+    "connect_failed": "Unable to reach the server. Make sure it is running and try again.",
+    # Uploads and Google Drive.
+    "upload_failed": "Uploading the files failed.",
+    "script_load_failed": "Loading {src} failed.",
+    "google_login_failed": "Signing in to Google Drive failed.",
+    "google_download_failed": 'Downloading "{name}" from Google Drive failed.',
+    "downloading_files": "Downloading files…",
+    "google_import_failed": "Importing from Google Drive failed.",
+}
+
+
+@dataclass(frozen=True)
+class _Locale:
+    direction: str
+    strings: Mapping[str, str]
+
+
+LOCALES: dict[str, _Locale] = {
+    "he": _Locale(direction="rtl", strings=_HEBREW),
+    "en": _Locale(direction="ltr", strings=_ENGLISH),
+}
+
+# Marks a string in a static file: @@key@@ becomes the string for the locale.
+_MARKER = re.compile(r"@@([a-z_]+)@@")
+
+
+class Translator:
+    """Look up UI strings for one locale, escaped for the context they land in."""
+
+    def __init__(self, locale: str = DEFAULT_LOCALE) -> None:
+        if locale not in LOCALES:
+            raise ValueError(
+                f"Unsupported locale {locale!r}; expected one of {sorted(LOCALES)}."
+            )
+        self.lang = locale
+        self.direction = LOCALES[locale].direction
+        self._strings = LOCALES[locale].strings
+
+    def text(self, key: str) -> str:
+        """Return the raw string; raises KeyError for an unknown key."""
+
+        return self._strings[key]
+
+    def html(self, key: str) -> str:
+        """Return the string escaped for HTML text and attribute values."""
+
+        return html.escape(self.text(key), quote=True)
+
+    def js(self, key: str) -> str:
+        """Return the string as a JavaScript string literal, safe inside <script>."""
+
+        return json.dumps(self.text(key), ensure_ascii=False).replace("</", "<\\/")
+
+    def fill_html(self, page: str) -> str:
+        """Replace @@key@@ markers in a page with HTML-escaped strings.
+
+        @@lang@@ and @@dir@@ resolve to the locale code and text direction.
+        """
+
+        def replace(match: re.Match[str]) -> str:
+            key = match.group(1)
+            if key == "lang":
+                return self.lang
+            if key == "dir":
+                return self.direction
+            return self.html(key)
+
+        return _MARKER.sub(replace, page)
+
+    def fill_script(self, script: str) -> str:
+        """Replace every @@key@@ marker in a script with its string literal."""
+
+        return _MARKER.sub(lambda match: self.js(match.group(1)), script)

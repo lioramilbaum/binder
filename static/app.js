@@ -14,11 +14,19 @@ const documentFormError = document.querySelector("#document-form-error");
 let currentFolderId = null;
 let currentDocumentId = null;
 
-const dateFormatter = new Intl.DateTimeFormat("he-IL", {
+const dateFormatter = new Intl.DateTimeFormat(@@date_locale@@, {
   day: "numeric",
   month: "long",
   year: "numeric",
 });
+
+function format(template, values) {
+  return template.replace(/\{(\w+)\}/g, (_, key) => values[key]);
+}
+
+function countLabel(count, one, other) {
+  return count === 1 ? one : format(other, { count });
+}
 
 function setupFileDropZone(inputId, zoneId, listId, pasteTargetId) {
   const input = document.querySelector(`#${inputId}`);
@@ -96,7 +104,7 @@ async function uploadFiles(documentId, files) {
     { method: "POST", body: uploadData },
   );
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "העלאת הקבצים נכשלה.");
+  if (!response.ok) throw new Error(result.error || @@upload_failed@@);
 }
 
 const documentFiles = setupFileDropZone(
@@ -117,7 +125,7 @@ function loadScript(src) {
     const script = document.createElement("script");
     script.src = src;
     script.onload = resolve;
-    script.onerror = () => reject(new Error(`טעינת ${src} נכשלה.`));
+    script.onerror = () => reject(new Error(format(@@script_load_failed@@, { src })));
     document.head.append(script);
   });
 }
@@ -145,7 +153,7 @@ function requestGoogleAccessToken() {
     }
     googleTokenClient.callback = (response) => {
       if (response.error) {
-        reject(new Error("ההתחברות ל-Google Drive נכשלה."));
+        reject(new Error(@@google_login_failed@@));
         return;
       }
       googleAccessToken = response.access_token;
@@ -178,7 +186,7 @@ async function downloadGoogleDriveFile(doc) {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${googleAccessToken}` },
   });
-  if (!response.ok) throw new Error(`הורדת "${doc.name}" מ-Google Drive נכשלה.`);
+  if (!response.ok) throw new Error(format(@@google_download_failed@@, { name: doc.name }));
   const blob = await response.blob();
   const name = isGoogleNative ? `${doc.name}.pdf` : doc.name;
   const type = isGoogleNative ? "application/pdf" : doc.mimeType || blob.type;
@@ -193,12 +201,12 @@ googleDriveImportButton?.addEventListener("click", async () => {
     await requestGoogleAccessToken();
     const docs = await openGoogleDrivePicker();
     if (!docs.length) return;
-    googleDriveImportButton.textContent = "מוריד קבצים…";
+    googleDriveImportButton.textContent = @@downloading_files@@;
     const files = [];
     for (const doc of docs) files.push(await downloadGoogleDriveFile(doc));
     documentFiles.addFiles(files);
   } catch (error) {
-    documentFormError.textContent = error.message || "יבוא מ-Google Drive נכשל.";
+    documentFormError.textContent = error.message || @@google_import_failed@@;
   } finally {
     googleDriveImportButton.disabled = false;
     googleDriveImportButton.textContent = originalText;
@@ -220,7 +228,7 @@ async function loadGoogleConfig() {
 function renderFolders(folders) {
   foldersElement.replaceChildren();
   emptyState.hidden = folders.length !== 0;
-  folderCount.textContent = folders.length ? `${folders.length} תיקיות` : "";
+  folderCount.textContent = folders.length ? countLabel(folders.length, @@folders_count_one@@, @@folders_count_other@@) : "";
 
   for (const folder of folders) {
     const card = document.createElement("button");
@@ -235,14 +243,16 @@ function renderFolders(folders) {
 
     const name = document.createElement("strong");
     name.textContent = folder.name;
+    name.dir = "auto";
 
     const description = document.createElement("span");
     description.className = "description";
-    description.textContent = folder.description || "ללא תיאור";
+    description.dir = "auto";
+    description.textContent = folder.description || @@no_description@@;
 
     const updated = document.createElement("span");
     updated.className = "updated";
-    updated.textContent = `עודכן ${dateFormatter.format(new Date(folder.updated_at))}`;
+    updated.textContent = format(@@updated@@, { date: dateFormatter.format(new Date(folder.updated_at)) });
 
     card.append(icon, name, description, updated);
     card.addEventListener("click", () => openFolder(folder.id));
@@ -263,7 +273,7 @@ function renderDocuments(documents) {
   documentsElement.replaceChildren();
   documentsEmptyState.hidden = documents.length !== 0;
   document.querySelector("#document-count").textContent =
-    documents.length ? `${documents.length} מסמכים` : "";
+    documents.length ? countLabel(documents.length, @@documents_count_one@@, @@documents_count_other@@) : "";
 
   for (const documentItem of documents) {
     const item = document.createElement("details");
@@ -274,6 +284,7 @@ function renderDocuments(documents) {
     const summaryText = document.createElement("span");
     const title = document.createElement("h3");
     title.textContent = documentItem.name;
+    title.dir = "auto";
     const documentDate = document.createElement("span");
     const formattedDate = dateFormatter.format(new Date(`${documentItem.date}T00:00:00`));
     documentDate.textContent = documentItem.time
@@ -293,12 +304,12 @@ function renderDocuments(documents) {
     const editButton = document.createElement("button");
     editButton.className = "secondary-button small-button";
     editButton.type = "button";
-    editButton.textContent = "עריכת מסמך";
+    editButton.textContent = @@edit_document@@;
     editButton.addEventListener("click", () => {
       currentDocumentId = documentItem.id;
-      documentDialogEyebrow.textContent = "עריכת מסמך";
-      documentDialogTitle.textContent = "עדכון פרטי המסמך";
-      documentSubmitButton.textContent = "שמירת שינויים";
+      documentDialogEyebrow.textContent = @@edit_document_eyebrow@@;
+      documentDialogTitle.textContent = @@edit_document_title@@;
+      documentSubmitButton.textContent = @@save_changes@@;
 
       document.querySelector("#document-date").value = documentItem.date;
       document.querySelector("#document-time").value = documentItem.time || "";
@@ -318,17 +329,17 @@ function renderDocuments(documents) {
       const chatToggle = document.createElement("button");
       chatToggle.className = "secondary-button small-button";
       chatToggle.type = "button";
-      chatToggle.textContent = "הצגת שיחת WhatsApp";
+      chatToggle.textContent = @@show_whatsapp@@;
       let chatElement = null;
       chatToggle.addEventListener("click", () => {
         if (chatElement) {
           chatElement.remove();
           chatElement = null;
-          chatToggle.textContent = "הצגת שיחת WhatsApp";
+          chatToggle.textContent = @@show_whatsapp@@;
         } else {
           chatElement = renderWhatsAppChat(documentItem.whatsapp_chat);
           body.append(chatElement);
-          chatToggle.textContent = "הסתרת שיחת WhatsApp";
+          chatToggle.textContent = @@hide_whatsapp@@;
         }
       });
       editActions.append(chatToggle);
@@ -339,12 +350,14 @@ function renderDocuments(documents) {
     if (documentItem.description) {
       const description = document.createElement("p");
       description.className = "document-description";
+      description.dir = "auto";
       description.textContent = documentItem.description;
       body.append(description);
     }
     if (documentItem.summary) {
       const thoughtsSummary = document.createElement("p");
       thoughtsSummary.className = "document-summary";
+      thoughtsSummary.dir = "auto";
       thoughtsSummary.textContent = documentItem.summary;
       body.append(thoughtsSummary);
     }
@@ -368,20 +381,21 @@ function renderDocuments(documents) {
         }
         const filename = document.createElement("span");
         filename.textContent = attachment.name;
+        filename.dir = "auto";
         link.append(filename);
         const removeButton = document.createElement("button");
         removeButton.className = "attachment-remove";
         removeButton.type = "button";
         removeButton.textContent = "×";
-        removeButton.title = "הסרת קובץ";
-        removeButton.setAttribute("aria-label", "הסרת קובץ");
+        removeButton.title = @@remove_file@@;
+        removeButton.setAttribute("aria-label", @@remove_file@@);
         removeButton.addEventListener("click", async () => {
-          if (!confirm(`למחוק את הקובץ "${attachment.name}"?`)) return;
+          if (!confirm(format(@@confirm_delete_file@@, { name: attachment.name }))) return;
           removeButton.disabled = true;
           const response = await fetch(url, { method: "DELETE" });
           if (!response.ok) {
             removeButton.disabled = false;
-            alert("מחיקת הקובץ נכשלה.");
+            alert(@@delete_file_failed@@);
             return;
           }
           await openFolder(currentFolderId, false);
@@ -424,6 +438,7 @@ function renderWhatsAppChat(chat) {
     bubble.className = "chat-bubble";
     const sender = document.createElement("strong");
     sender.textContent = message.sender;
+    sender.dir = "auto";
     bubble.append(sender);
     if (message.reply_to) {
       const quote = document.createElement("div");
@@ -432,10 +447,12 @@ function renderWhatsAppChat(chat) {
       quoteSender.textContent = message.reply_to.sender;
       const quoteText = document.createElement("span");
       quoteText.textContent = message.reply_to.content;
+      quoteText.dir = "auto";
       quote.append(quoteSender, quoteText);
       bubble.append(quote);
     }
     const content = document.createElement("p");
+    content.dir = "auto";
     appendLinkifiedText(content, message.content);
     const time = document.createElement("time");
     time.textContent = message.time;
@@ -477,11 +494,11 @@ async function openFolder(folderId, updateHash = true) {
   currentFolderId = folder.id;
   document.querySelector("#current-folder-name").textContent = folder.name;
   document.querySelector("#current-folder-description").textContent =
-    folder.description || "ללא תיאור";
+    folder.description || @@no_description@@;
   renderDocuments(folder.documents || []);
   homeView.hidden = true;
   folderView.hidden = false;
-  document.title = `${folder.name} — Binder`;
+  document.title = format(@@folder_title@@, { name: folder.name });
   if (updateHash) history.pushState(null, "", `#folder/${folder.id}`);
 }
 
@@ -489,7 +506,7 @@ function showHome(updateHash = true) {
   currentFolderId = null;
   folderView.hidden = true;
   homeView.hidden = false;
-  document.title = "Binder — ניהול מידע";
+  document.title = @@app_title@@;
   if (updateHash) history.pushState(null, "", window.location.pathname);
 }
 
@@ -504,9 +521,9 @@ document.querySelector("#cancel-dialog").addEventListener("click", () => dialog.
 document.querySelector("#back-button").addEventListener("click", () => showHome());
 document.querySelector("#new-document-button").addEventListener("click", () => {
   currentDocumentId = null;
-  documentDialogEyebrow.textContent = "מסמך חדש";
-  documentDialogTitle.textContent = "הוספת מידע לתיקייה";
-  documentSubmitButton.textContent = "שמירת מסמך";
+  documentDialogEyebrow.textContent = @@new_document_eyebrow@@;
+  documentDialogTitle.textContent = @@new_document_title@@;
+  documentSubmitButton.textContent = @@save_document@@;
   documentForm.reset();
   documentFiles.clear();
   documentFormError.textContent = "";
@@ -549,7 +566,7 @@ documentForm.addEventListener("submit", async (event) => {
   const submitButton = documentForm.querySelector('button[type="submit"]');
   const originalButtonText = submitButton.textContent;
   submitButton.disabled = true;
-  submitButton.textContent = "שומר…";
+  submitButton.textContent = @@saving@@;
   const data = new FormData(documentForm);
   try {
     const isEdit = !!currentDocumentId;
@@ -576,7 +593,7 @@ documentForm.addEventListener("submit", async (event) => {
       : null;
     if (!response.ok) {
       documentFormError.textContent =
-        result?.error || "השמירה נכשלה. יש להפעיל מחדש את השרת ולנסות שוב.";
+        result?.error || @@save_failed@@;
       return;
     }
     const selectedFiles = data.getAll("files").filter((file) => file.size > 0);
@@ -589,7 +606,7 @@ documentForm.addEventListener("submit", async (event) => {
     await openFolder(currentFolderId, false);
   } catch (error) {
     documentFormError.textContent =
-      error.message || "לא ניתן להתחבר לשרת. ודאו שהשרת פועל ונסו שוב.";
+      error.message || @@connect_failed@@;
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = originalButtonText;
@@ -610,5 +627,5 @@ window.addEventListener("hashchange", () => {
 });
 
 start().catch(() => {
-  foldersElement.textContent = "לא הצלחנו לטעון את התיקיות. נסו לרענן את העמוד.";
+  foldersElement.textContent = @@load_folders_failed@@;
 });
