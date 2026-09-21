@@ -63,3 +63,6 @@ class Folders:
         self, folder_id: str, document_id: str, file_id: str
     ) -> Optional[tuple[bytes, str, str]]:
         return folder_repository.get_file(self.factory, folder_id, document_id, file_id)
+
+    def duplicates(self) -> dict[str, object]:
+        return folder_repository.find_duplicates(self.factory)

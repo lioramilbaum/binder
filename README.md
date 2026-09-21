@@ -109,6 +109,24 @@ read-only Drive access, then downloads the selected file(s) into the same
 upload flow used for local files. Google Docs, Sheets, and Slides files are
 exported as PDF; every other file type is downloaded as-is.
 
+## Duplicate attachments
+
+Every attachment is stored with a SHA-256 hash. Uploading a file identical to
+one already stored (in any document or folder) reuses the existing stored copy
+instead of writing another. Deleting one of several sharing attachments keeps
+the bytes until the last one is removed.
+
+`GET /api/duplicates` lists groups of identical attachments and where they
+appear. For attachments uploaded before hashing existed, run after
+`make migrate`:
+
+```sh
+binder-dedupe backfill        # hash existing attachments
+binder-dedupe report          # list duplicate groups
+binder-dedupe merge           # dry run: space that would be reclaimed
+binder-dedupe merge --apply   # share one copy per group (run make backup first)
+```
+
 ## Running the tests
 
 ```bash

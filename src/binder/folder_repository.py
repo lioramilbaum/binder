@@ -10,7 +10,7 @@ from uuid import uuid4
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from .database import session_scope
-from .large_objects import create_large_object, read_large_object
+from .large_objects import create_large_object, hash_stream, read_large_object
 from .models import Document, DocumentFile, Folder
 from .whatsapp import WhatsAppChat
 
@@ -196,15 +196,6 @@ def _read_upload_bytes(content: Union[bytes, BinaryIO]) -> bytes:
     return content.read()
 
 
-def _upload_size(content: Union[bytes, BinaryIO]) -> int:
-    if isinstance(content, bytes):
-        return len(content)
-    content.seek(0, 2)
-    size = content.tell()
-    content.seek(0)
-    return size
-
-
 _WHATSAPP_CANDIDATE_SUFFIXES = (".txt", ".zip")
 
 
@@ -240,10 +231,16 @@ def add_files(
             )
             if is_chat_candidate:
                 data = _read_upload_bytes(content)
-                size = len(data)
-                oid = create_large_object(session, data)
-            else:
-                size = _upload_size(content)
+                content = data
+            digest, size = hash_stream(content)
+            # An identical attachment already stored is shared, not copied.
+            oid = (
+                session.query(DocumentFile.data_oid)
+                .filter(DocumentFile.sha256 == digest, DocumentFile.size == size)
+                .limit(1)
+                .scalar()
+            )
+            if oid is None:
                 oid = create_large_object(session, content)
 
             file = DocumentFile(
@@ -253,6 +250,7 @@ def add_files(
                 content_type=content_type or "application/octet-stream",
                 size=size,
                 data_oid=oid,
+                sha256=digest,
                 created_at=_now(),
             )
             session.add(file)
@@ -323,3 +321,59 @@ def get_file(
         if file is None:
             return None
         return read_large_object(session, file.data_oid), file.content_type, file.name
+
+
+def find_duplicates(factory: sessionmaker[Session]) -> dict[str, object]:
+    """Group attachments with identical content, across all documents and folders.
+
+    Each group lists where the file appears and how much space sharing one
+    stored copy would save (``reclaimable_bytes``). ``unhashed`` counts files
+    that cannot be compared yet because they predate content hashing.
+    """
+
+    with factory() as session:
+        unhashed = (
+            session.query(DocumentFile).filter(DocumentFile.sha256.is_(None)).count()
+        )
+        rows = (
+            session.query(DocumentFile, Document, Folder)
+            .join(Document, DocumentFile.document_id == Document.id)
+            .join(Folder, Document.folder_id == Folder.id)
+            .filter(DocumentFile.sha256.is_not(None))
+            .order_by(DocumentFile.created_at)
+            .all()
+        )
+        grouped: dict[tuple[str, int], list[tuple[DocumentFile, Document, Folder]]] = {}
+        for row in rows:
+            grouped.setdefault((row[0].sha256, row[0].size), []).append(row)
+
+        groups = []
+        for (digest, size), members in grouped.items():
+            if len(members) < 2:
+                continue
+            stored_copies = len({file.data_oid for file, _, _ in members})
+            groups.append(
+                {
+                    "sha256": digest,
+                    "size": size,
+                    "stored_copies": stored_copies,
+                    "reclaimable_bytes": size * (stored_copies - 1),
+                    "files": [
+                        {
+                            "id": file.id,
+                            "name": file.name,
+                            "document_id": document.id,
+                            "document_name": document.name,
+                            "folder_id": folder.id,
+                            "folder_name": folder.name,
+                        }
+                        for file, document, folder in members
+                    ],
+                }
+            )
+        groups.sort(key=lambda group: (-group["reclaimable_bytes"], -group["size"]))
+        return {
+            "groups": groups,
+            "unhashed": unhashed,
+            "reclaimable_bytes": sum(group["reclaimable_bytes"] for group in groups),
+        }

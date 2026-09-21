@@ -13,6 +13,7 @@ dependencies = [
 [project.scripts]
 binder-server = "binder.app:run"
 binder-import-json = "binder.json_import:main"
+binder-dedupe = "binder.dedupe:main"
 
 [build-system]
 requires = ["hatchling"]

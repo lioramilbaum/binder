@@ -57,7 +57,8 @@ class DocumentFile(Base):
 
     The bytes themselves live in a PostgreSQL large object (referenced by
     ``data_oid``), not in this row: a plain column value is capped at 1 GiB,
-    and attachments here can exceed that.
+    and attachments here can exceed that. Rows with the same ``sha256`` share
+    one large object.
     """
 
     __tablename__ = "document_files"
@@ -67,7 +68,12 @@ class DocumentFile(Base):
     name: Mapped[str] = mapped_column(Text)
     content_type: Mapped[str] = mapped_column(Text)
     size: Mapped[int] = mapped_column(Integer)
-    data_oid: Mapped[int] = mapped_column(Integer)
+    # Identical attachments may share one large object, so several rows can
+    # point at the same oid; the database releases it once the last one goes.
+    data_oid: Mapped[int] = mapped_column(Integer, index=True)
+    # SHA-256 of the bytes; ``None`` for rows created before hashing existed
+    # (``binder-dedupe backfill`` fills them in).
+    sha256: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
     created_at: Mapped[str] = mapped_column(String(64))
 
     document: Mapped[Document] = relationship(back_populates="files")

@@ -5,7 +5,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from binder import folder_repository
+from binder import dedupe
 from binder.database import Base
+from binder.large_objects import RELEASE_FUNCTION_SQL, RELEASE_TRIGGER_SQL
 
 
 class FolderRepositoryTests(unittest.TestCase):
@@ -187,15 +189,13 @@ class AttachmentRepositoryTests(unittest.TestCase):
         self.engine = create_engine(_TEST_DATABASE_URL)
         with self.engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS lo"))
+            # Dropping tables leaves their large objects behind; start clean.
+            connection.execute(text("SELECT lo_unlink(oid) FROM pg_largeobject_metadata"))
         Base.metadata.drop_all(self.engine)
         Base.metadata.create_all(self.engine)
         with self.engine.begin() as connection:
-            connection.execute(
-                text(
-                    "CREATE TRIGGER document_files_lo_trigger BEFORE UPDATE OR DELETE "
-                    "ON document_files FOR EACH ROW EXECUTE FUNCTION lo_manage(data_oid)"
-                )
-            )
+            connection.execute(text(RELEASE_FUNCTION_SQL))
+            connection.execute(text(RELEASE_TRIGGER_SQL))
         self.factory = sessionmaker(bind=self.engine, expire_on_commit=False)
 
     def tearDown(self):
@@ -224,6 +224,95 @@ class AttachmentRepositoryTests(unittest.TestCase):
         self.assertEqual(data, b"image bytes")
         self.assertEqual(content_type, "image/jpeg")
         self.assertEqual(name, "צילום.jpg")
+
+    def _document(self, folder, name):
+        return folder_repository.create_document(self.factory, folder["id"], "2026-08-30", name)
+
+    def _large_object_count(self):
+        with self.engine.connect() as connection:
+            return connection.execute(
+                text("SELECT count(*) FROM pg_largeobject_metadata")
+            ).scalar_one()
+
+    def test_identical_uploads_share_one_large_object(self):
+        folder = folder_repository.create_folder(self.factory, "כפילויות")
+        first, second = self._document(folder, "א"), self._document(folder, "ב")
+        one = folder_repository.add_files(
+            self.factory, folder["id"], first["id"], [("a.pdf", "application/pdf", b"same")]
+        )
+        two = folder_repository.add_files(
+            self.factory, folder["id"], second["id"], [("copy.pdf", "application/pdf", b"same")]
+        )
+
+        self.assertEqual(self._large_object_count(), 1)
+        data, _type, _name = folder_repository.get_file(
+            self.factory, folder["id"], second["id"], two[0]["id"]
+        )
+        self.assertEqual(data, b"same")
+        groups = folder_repository.find_duplicates(self.factory)["groups"]
+        self.assertEqual(len(groups), 1)
+        self.assertEqual({file["id"] for file in groups[0]["files"]}, {one[0]["id"], two[0]["id"]})
+        self.assertEqual(groups[0]["reclaimable_bytes"], 0)
+
+    def test_different_content_is_not_a_duplicate(self):
+        folder = folder_repository.create_folder(self.factory, "כפילויות")
+        document = self._document(folder, "א")
+        folder_repository.add_files(
+            self.factory,
+            folder["id"],
+            document["id"],
+            [("a.txt", "text/plain", b"one"), ("b.txt", "text/plain", b"two")],
+        )
+
+        self.assertEqual(folder_repository.find_duplicates(self.factory)["groups"], [])
+        self.assertEqual(self._large_object_count(), 2)
+
+    def test_shared_bytes_survive_until_last_reference_is_removed(self):
+        folder = folder_repository.create_folder(self.factory, "כפילויות")
+        first, second = self._document(folder, "א"), self._document(folder, "ב")
+        one = folder_repository.add_files(
+            self.factory, folder["id"], first["id"], [("a.bin", "application/octet-stream", b"x")]
+        )
+        two = folder_repository.add_files(
+            self.factory, folder["id"], second["id"], [("b.bin", "application/octet-stream", b"x")]
+        )
+
+        folder_repository.remove_file(self.factory, folder["id"], first["id"], one[0]["id"])
+
+        self.assertEqual(self._large_object_count(), 1)
+        data, _type, _name = folder_repository.get_file(
+            self.factory, folder["id"], second["id"], two[0]["id"]
+        )
+        self.assertEqual(data, b"x")
+        folder_repository.remove_file(self.factory, folder["id"], second["id"], two[0]["id"])
+        self.assertEqual(self._large_object_count(), 0)
+
+    def test_backfill_and_merge_existing_unhashed_copies(self):
+        folder = folder_repository.create_folder(self.factory, "כפילויות")
+        first, second = self._document(folder, "א"), self._document(folder, "ב")
+        for document in (first, second):
+            folder_repository.add_files(
+                self.factory, folder["id"], document["id"], [("f.bin", "application/octet-stream", b"legacy")]
+            )
+        # Simulate legacy rows: unhashed, each with its own large object.
+        with self.engine.begin() as connection:
+            connection.execute(text("UPDATE document_files SET sha256 = NULL"))
+            oid = connection.execute(text("SELECT data_oid FROM document_files LIMIT 1")).scalar_one()
+            copy = connection.execute(text("SELECT lo_from_bytea(0, lo_get(:oid))"), {"oid": oid}).scalar_one()
+            connection.execute(
+                text("UPDATE document_files SET data_oid = :copy WHERE id = (SELECT id FROM document_files WHERE data_oid = :oid LIMIT 1)"),
+                {"copy": copy, "oid": oid},
+            )
+        self.assertEqual(self._large_object_count(), 2)
+        self.assertEqual(folder_repository.find_duplicates(self.factory)["unhashed"], 2)
+
+        self.assertEqual(dedupe.backfill_hashes(self.factory), 2)
+        report = folder_repository.find_duplicates(self.factory)
+        self.assertEqual(report["reclaimable_bytes"], len(b"legacy"))
+
+        self.assertEqual(dedupe.merge_duplicates(self.factory), len(b"legacy"))
+        self.assertEqual(self._large_object_count(), 1)
+        self.assertEqual(folder_repository.find_duplicates(self.factory)["reclaimable_bytes"], 0)
 
     def test_add_file_from_stream(self):
         import io

@@ -41,6 +41,9 @@ class Binder(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/api/duplicates":
+            self._send_json(self.store.duplicates())
+            return
         if path == "/api/folders":
             self._send_json(self.store.list())
             return
