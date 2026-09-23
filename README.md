@@ -9,17 +9,21 @@ Python 3.11 or later is required, along with [`uv`](https://docs.astral.sh/uv/)
 for dependency management. Folders, documents, and attachments are stored in
 PostgreSQL.
 
-The easiest way to run everything locally is Docker Compose, which starts both
-the app and a PostgreSQL database and applies schema migrations automatically:
+The application runs in Docker Compose, which starts both the app and a
+PostgreSQL database and applies schema migrations automatically:
 
 ```bash
-docker compose up
+make up
 ```
 
-Then open [http://localhost:8000](http://localhost:8000) in a browser.
+Then open [http://localhost:8000](http://localhost:8000) in a browser. `make up`
+rebuilds the image and waits for both services to report healthy. `make down`
+stops them and keeps the database; `make restart` does both. Set `APP_PORT` in
+`.env` to change the web port. Compose reads `.env` automatically, so the
+`BINDER_*` settings below can be set there too.
 
-To run outside Docker, start a PostgreSQL instance yourself, set
-`DATABASE_URL`, apply migrations, then start the server:
+To run outside Docker (for development), start a PostgreSQL instance yourself,
+set `DATABASE_URL`, apply migrations, then start the server:
 
 ```bash
 uv sync
@@ -117,14 +121,14 @@ instead of writing another. Deleting one of several sharing attachments keeps
 the bytes until the last one is removed.
 
 `GET /api/duplicates` lists groups of identical attachments and where they
-appear. For attachments uploaded before hashing existed, run after
-`make migrate`:
+appear. For attachments uploaded before hashing existed, run inside the app
+container while it is up:
 
 ```sh
-binder-dedupe backfill        # hash existing attachments
-binder-dedupe report          # list duplicate groups
-binder-dedupe merge           # dry run: space that would be reclaimed
-binder-dedupe merge --apply   # share one copy per group (run make backup first)
+docker compose exec app binder-dedupe backfill        # hash existing attachments
+docker compose exec app binder-dedupe report          # list duplicate groups
+docker compose exec app binder-dedupe merge           # dry run: space that would be reclaimed
+docker compose exec app binder-dedupe merge --apply   # share one copy per group (run make backup first)
 ```
 
 ## Running the tests
