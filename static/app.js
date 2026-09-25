@@ -8,11 +8,13 @@ const homeView = document.querySelector("#home-view");
 const folderView = document.querySelector("#folder-view");
 const documentsElement = document.querySelector("#documents");
 const documentsEmptyState = document.querySelector("#documents-empty-state");
+const documentSearch = document.querySelector("#document-search");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
 let currentFolderId = null;
 let currentDocumentId = null;
+let currentDocuments = [];
 
 const dateFormatter = new Intl.DateTimeFormat(@@date_locale@@, {
   day: "numeric",
@@ -492,10 +494,12 @@ async function openFolder(folderId, updateHash = true) {
   }
   const folder = await response.json();
   currentFolderId = folder.id;
+  currentDocuments = folder.documents || [];
+  documentSearch.value = "";
   document.querySelector("#current-folder-name").textContent = folder.name;
   document.querySelector("#current-folder-description").textContent =
     folder.description || @@no_description@@;
-  renderDocuments(folder.documents || []);
+  renderDocuments(currentDocuments);
   homeView.hidden = true;
   folderView.hidden = false;
   document.title = format(@@folder_title@@, { name: folder.name });
@@ -504,6 +508,8 @@ async function openFolder(folderId, updateHash = true) {
 
 function showHome(updateHash = true) {
   currentFolderId = null;
+  currentDocuments = [];
+  documentSearch.value = "";
   folderView.hidden = true;
   homeView.hidden = false;
   document.title = @@app_title@@;
@@ -611,6 +617,14 @@ documentForm.addEventListener("submit", async (event) => {
     submitButton.disabled = false;
     submitButton.textContent = originalButtonText;
   }
+});
+
+documentSearch.addEventListener("input", () => {
+  const q = documentSearch.value.trim().toLowerCase();
+  const filtered = q
+    ? currentDocuments.filter((doc) => doc.name.toLowerCase().includes(q))
+    : currentDocuments;
+  renderDocuments(filtered);
 });
 
 async function start() {
