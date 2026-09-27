@@ -121,6 +121,32 @@ class BinderEditTests(unittest.TestCase):
             "folder", "document", payload
         )
 
+    def test_edit_tags(self):
+        payload = {"tags": [" Budget ", "budget", "תקציב"]}
+        handler = self.patch(payload)
+        handler.store.update_document.assert_called_once_with(
+            "folder", "document", {"tags": ["Budget", "תקציב"]}
+        )
+
+    def test_edit_tags_can_be_cleared(self):
+        payload = {"tags": []}
+        handler = self.patch(payload)
+        handler.store.update_document.assert_called_once_with(
+            "folder", "document", {"tags": []}
+        )
+
+    def test_rejects_invalid_tags_in_edit(self):
+        for payload in (
+            {"tags": "a"},
+            {"tags": [1]},
+            {"tags": ["x" * 51]},
+            {"tags": [str(i) for i in range(21)]},
+        ):
+            with self.subTest(payload=payload):
+                handler = self.patch(payload)
+                handler.store.update_document.assert_not_called()
+                self.assertEqual(handler._send_json.call_args.args[1], 400)
+
 
 class BinderAttachmentTests(unittest.TestCase):
     def test_sends_attachment_bytes_from_the_store(self):
@@ -178,6 +204,72 @@ class BinderDeleteTests(unittest.TestCase):
             remove_file_result=None,
         )
         self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+
+class BinderCreateDocumentTests(unittest.TestCase):
+    def post(self, path, payload):
+        handler = object.__new__(Binder)
+        handler.path = path
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = Mock()
+        handler.store.create_document.return_value = {"id": "document"}
+        handler._send_json = Mock()
+        handler.do_POST()
+        return handler
+
+    def test_create_document_with_tags(self):
+        payload = {
+            "date": "2026-09-27",
+            "name": "Test",
+            "tags": ["Budget", "Urgent"],
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_called_once()
+        call_kwargs = handler.store.create_document.call_args.kwargs
+        self.assertEqual(call_kwargs["tags"], ["Budget", "Urgent"])
+
+    def test_create_document_accepts_empty_tags(self):
+        payload = {
+            "date": "2026-09-27",
+            "name": "Test",
+            "tags": [],
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_called_once()
+
+    def test_rejects_invalid_tags_in_create(self):
+        for payload in (
+            {"date": "2026-09-27", "name": "Test", "tags": "not-a-list"},
+            {"date": "2026-09-27", "name": "Test", "tags": [1, 2]},
+            {"date": "2026-09-27", "name": "Test", "tags": ["x" * 51]},
+            {"date": "2026-09-27", "name": "Test", "tags": [str(i) for i in range(21)]},
+        ):
+            with self.subTest(payload=payload):
+                handler = self.post("/api/folders/folder/documents", payload)
+                handler.store.create_document.assert_not_called()
+                self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+
+class BinderTagsTests(unittest.TestCase):
+    def test_get_tags_returns_list(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/tags"
+        handler.store = Mock()
+        handler.store.tags.return_value = [
+            {"name": "Budget", "document_count": 2},
+            {"name": "Urgent", "document_count": 1},
+        ]
+        handler._send_json = Mock()
+        handler.do_GET()
+        handler.store.tags.assert_called_once()
+        handler._send_json.assert_called_once_with(
+            [
+                {"name": "Budget", "document_count": 2},
+                {"name": "Urgent", "document_count": 1},
+            ]
+        )
 
 
 if __name__ == "__main__":

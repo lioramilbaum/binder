@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import BinaryIO, Optional, Union
+from typing import BinaryIO, Optional, Sequence, Union
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -36,9 +36,10 @@ class Folders:
         content: str = "",
         time: str = "",
         summary: str = "",
+        tags: Sequence[str] = (),
     ) -> Optional[dict[str, object]]:
         return folder_repository.create_document(
-            self.factory, folder_id, date, name, description, content, time, summary
+            self.factory, folder_id, date, name, description, content, time, summary, tags=tags
         )
 
     def add_files(
@@ -66,3 +67,6 @@ class Folders:
 
     def duplicates(self) -> dict[str, object]:
         return folder_repository.find_duplicates(self.factory)
+
+    def tags(self) -> list[dict[str, object]]:
+        return folder_repository.list_tags(self.factory)

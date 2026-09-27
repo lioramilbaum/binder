@@ -15,6 +15,8 @@ const documentFormError = document.querySelector("#document-form-error");
 let currentFolderId = null;
 let currentDocumentId = null;
 let currentDocuments = [];
+let documentTags = [];
+const selectedFilterTags = new Set();
 
 const dateFormatter = new Intl.DateTimeFormat(@@date_locale@@, {
   day: "numeric",
@@ -97,6 +99,111 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const tagKey = (name) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+function renderTagEditor() {
+  const tagList = document.querySelector("#document-tags");
+  tagList.replaceChildren();
+  for (const tag of documentTags) {
+    const chip = document.createElement("span");
+    chip.className = "tag-chip";
+    chip.textContent = tag;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "×";
+    button.className = "tag-remove";
+    button.setAttribute("aria-label", format(@@remove_tag@@, { name: tag }));
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      documentTags = documentTags.filter((t) => t !== tag);
+      renderTagEditor();
+    });
+    chip.append(button);
+    tagList.append(chip);
+  }
+}
+
+function commitTagInput() {
+  const input = document.querySelector("#document-tag-input");
+  const value = input.value.trim();
+  if (!value) return;
+  const newTags = value.split(",").map((t) => t.trim()).filter((t) => t);
+  const uniqueKeys = new Set(documentTags.map(tagKey));
+  for (const tag of newTags) {
+    if (!uniqueKeys.has(tagKey(tag))) {
+      documentTags.push(tag);
+      uniqueKeys.add(tagKey(tag));
+    }
+  }
+  input.value = "";
+  renderTagEditor();
+}
+
+async function loadTagSuggestions() {
+  try {
+    const response = await fetch("/api/tags");
+    const tags = await response.json();
+    const datalist = document.querySelector("#tag-suggestions");
+    datalist.replaceChildren();
+    for (const tag of tags) {
+      const option = document.createElement("option");
+      option.value = tag.name;
+      datalist.append(option);
+    }
+  } catch {
+    // Silently ignore failures
+  }
+}
+
+function renderTagFilter() {
+  const container = document.querySelector("#tag-filter");
+  const distinctTags = new Set();
+  for (const doc of currentDocuments) {
+    for (const tag of doc.tags || []) {
+      distinctTags.add(tag);
+    }
+  }
+  const tags = Array.from(distinctTags).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  container.hidden = tags.length === 0;
+  container.replaceChildren();
+  for (const tag of tags) {
+    const button = document.createElement("button");
+    button.className = "tag-filter-chip";
+    button.type = "button";
+    button.textContent = tag;
+    const isSelected = selectedFilterTags.has(tagKey(tag));
+    button.setAttribute("aria-pressed", isSelected);
+    button.addEventListener("click", () => {
+      const key = tagKey(tag);
+      if (selectedFilterTags.has(key)) {
+        selectedFilterTags.delete(key);
+      } else {
+        selectedFilterTags.add(key);
+      }
+      renderTagFilter();
+      applyDocumentFilters();
+    });
+    container.append(button);
+  }
+}
+
+function applyDocumentFilters() {
+  const q = documentSearch.value.trim().toLowerCase();
+  let filtered = currentDocuments;
+
+  if (q) {
+    filtered = filtered.filter((doc) => doc.name.toLowerCase().includes(q));
+  }
+
+  if (selectedFilterTags.size > 0) {
+    filtered = filtered.filter((doc) => {
+      return (doc.tags || []).some((tag) => selectedFilterTags.has(tagKey(tag)));
+    });
+  }
+
+  renderDocuments(filtered);
+}
+
 async function uploadFiles(documentId, files) {
   if (!files.length) return;
   const uploadData = new FormData();
@@ -115,6 +222,23 @@ const documentFiles = setupFileDropZone(
   "document-selected-files",
   "document-content",
 );
+
+const documentTagInput = document.querySelector("#document-tag-input");
+documentTagInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === ",") {
+    event.preventDefault();
+    commitTagInput();
+  } else if (event.key === "Backspace" && !event.target.value && documentTags.length > 0) {
+    event.preventDefault();
+    documentTags.pop();
+    renderTagEditor();
+  }
+});
+documentTagInput.addEventListener("change", (event) => {
+  if (event.target.value) {
+    commitTagInput();
+  }
+});
 
 const googleDriveImportButton = document.querySelector("#google-drive-import-button");
 let googleConfig = { googleClientId: "", googleApiKey: "" };
@@ -293,6 +417,17 @@ function renderDocuments(documents) {
       ? `${formattedDate}, ${documentItem.time}`
       : formattedDate;
     summaryText.append(title, documentDate);
+    if (documentItem.tags?.length) {
+      const tagsContainer = document.createElement("span");
+      tagsContainer.className = "document-tags";
+      for (const tag of documentItem.tags) {
+        const tagChip = document.createElement("span");
+        tagChip.className = "tag-chip";
+        tagChip.textContent = tag;
+        tagsContainer.append(tagChip);
+      }
+      summaryText.append(tagsContainer);
+    }
     const marker = document.createElement("span");
     marker.className = "document-marker";
     marker.textContent = "⌄";
@@ -319,6 +454,9 @@ function renderDocuments(documents) {
       document.querySelector("#document-description").value = documentItem.description || "";
       document.querySelector("#document-content").value = documentItem.content || "";
       document.querySelector("#document-summary").value = documentItem.summary || "";
+      documentTags = [...(documentItem.tags || [])];
+      renderTagEditor();
+      loadTagSuggestions();
 
       documentFormError.textContent = "";
       documentFiles.clear();
@@ -496,9 +634,11 @@ async function openFolder(folderId, updateHash = true) {
   currentFolderId = folder.id;
   currentDocuments = folder.documents || [];
   documentSearch.value = "";
+  selectedFilterTags.clear();
   document.querySelector("#current-folder-name").textContent = folder.name;
   document.querySelector("#current-folder-description").textContent =
     folder.description || @@no_description@@;
+  renderTagFilter();
   renderDocuments(currentDocuments);
   homeView.hidden = true;
   folderView.hidden = false;
@@ -510,6 +650,7 @@ function showHome(updateHash = true) {
   currentFolderId = null;
   currentDocuments = [];
   documentSearch.value = "";
+  selectedFilterTags.clear();
   folderView.hidden = true;
   homeView.hidden = false;
   document.title = @@app_title@@;
@@ -533,6 +674,9 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
   documentForm.reset();
   documentFiles.clear();
   documentFormError.textContent = "";
+  documentTags = [];
+  renderTagEditor();
+  loadTagSuggestions();
   document.querySelector("#document-date").value = new Date().toISOString().slice(0, 10);
   documentDialog.showModal();
 });
@@ -569,6 +713,7 @@ form.addEventListener("submit", async (event) => {
 documentForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   documentFormError.textContent = "";
+  commitTagInput();
   const submitButton = documentForm.querySelector('button[type="submit"]');
   const originalButtonText = submitButton.textContent;
   submitButton.disabled = true;
@@ -591,6 +736,7 @@ documentForm.addEventListener("submit", async (event) => {
         description: data.get("description"),
         content: data.get("content"),
         summary: data.get("summary"),
+        tags: documentTags,
       }),
     });
     const contentType = response.headers.get("Content-Type") || "";
@@ -619,13 +765,7 @@ documentForm.addEventListener("submit", async (event) => {
   }
 });
 
-documentSearch.addEventListener("input", () => {
-  const q = documentSearch.value.trim().toLowerCase();
-  const filtered = q
-    ? currentDocuments.filter((doc) => doc.name.toLowerCase().includes(q))
-    : currentDocuments;
-  renderDocuments(filtered);
-});
+documentSearch.addEventListener("input", applyDocumentFilters);
 
 async function start() {
   await loadFolders();

@@ -131,6 +131,26 @@ docker compose exec app binder-dedupe merge           # dry run: space that woul
 docker compose exec app binder-dedupe merge --apply   # share one copy per group (run make backup first)
 ```
 
+## Tags
+
+Documents can be tagged with free-text labels to organize and filter content.
+Tags are global across all folders and matched case-insensitively. When you
+create or edit a document, type tag names into the tags input field and press
+Enter or comma to add them; duplicates (ignoring case and spacing) are
+automatically deduplicated and the first spelling is preserved.
+
+The tag editor accepts up to 20 tags per document, each up to 50 characters
+long. Tags are created in the same transaction as the document; if the document save fails, no new tags are persisted.
+
+In the folder view, tags appear as small chips below each document's date.
+The filter bar at the top of the documents list shows all distinct tags in the
+current folder with their document counts; click a tag chip to toggle filtering
+by that tag. Multiple tags can be selected to show documents tagged with any of
+them.
+
+`GET /api/tags` returns a sorted list of all tags and their document counts,
+used to populate the tag suggestions autocomplete.
+
 ## Running the tests
 
 ```bash
