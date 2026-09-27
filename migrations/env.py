@@ -8,7 +8,7 @@ from pathlib import Path
 from alembic import context
 
 from binder.database import Base, database_url
-from binder.models import Document, DocumentFile, Folder  # noqa: F401 - registers metadata with Base.
+from binder.models import Document, DocumentFile, Folder, Tag  # noqa: F401 - registers metadata with Base.
 
 
 config = context.config

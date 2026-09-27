@@ -4,19 +4,69 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO, Union
+from typing import BinaryIO, Sequence, Union
 from uuid import uuid4
 
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from .database import session_scope
 from .large_objects import create_large_object, hash_stream, read_large_object
-from .models import Document, DocumentFile, Folder
+from .models import Document, DocumentFile, Folder, Tag
+from .tags import normalize_tags, tag_key
 from .whatsapp import WhatsAppChat
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _resolve_tags(session: Session, names: list[str]) -> list[Tag]:
+    """Get or create tags by name, returning them in input order.
+
+    Names are normalized first. Tags are queried by their case-insensitive key.
+    Missing tags are created and added to the session.
+
+    Handles concurrent tag creation via savepoints: if another transaction
+    creates the same tag before we commit, we catch the constraint violation
+    and fetch the tag that was created by the other transaction.
+    """
+    normalized = normalize_tags(names)
+    if not normalized:
+        return []
+
+    # Query existing tags by key
+    keys = [tag_key(name) for name in normalized]
+    existing = {
+        tag.key: tag
+        for tag in session.query(Tag).filter(Tag.key.in_(keys)).all()
+    }
+
+    # Create missing tags, handling concurrent inserts via savepoints
+    now = _now()
+    for name in normalized:
+        key = tag_key(name)
+        if key not in existing:
+            try:
+                # Use a savepoint so we can catch and recover from conflicts
+                # without rolling back the entire transaction (e.g., the document
+                # being created in the caller)
+                with session.begin_nested():
+                    tag = Tag(
+                        id=str(uuid4()),
+                        name=name,
+                        key=key,
+                        created_at=now,
+                    )
+                    session.add(tag)
+                existing[key] = tag
+            except IntegrityError:
+                # Another concurrent request created this tag; fetch it
+                tag = session.query(Tag).filter_by(key=key).one()
+                existing[key] = tag
+
+    return [existing[k] for k in keys]
 
 
 def _file_to_dict(file: DocumentFile) -> dict[str, object]:
@@ -38,6 +88,7 @@ def _document_summary(document: Document) -> dict[str, object]:
         "summary": document.summary,
         "created_at": document.created_at,
         "updated_at": document.updated_at,
+        "tags": [tag.name for tag in document.tags],
     }
 
 
@@ -62,7 +113,7 @@ def list_folders(factory: sessionmaker[Session]) -> list[dict[str, object]]:
     with factory() as session:
         folders = (
             session.query(Folder)
-            .options(selectinload(Folder.documents))
+            .options(selectinload(Folder.documents).selectinload(Document.tags))
             .order_by(Folder.updated_at.desc())
             .all()
         )
@@ -85,7 +136,14 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
     with factory() as session:
         folder = (
             session.query(Folder)
-            .options(selectinload(Folder.documents).selectinload(Document.files))
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.files)
+            )
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.tags)
+            )
             .filter(Folder.id == folder_id)
             .one_or_none()
         )
@@ -136,6 +194,7 @@ def create_document(
     content: str = "",
     time: str = "",
     summary: str = "",
+    tags: Sequence[str] = (),
 ) -> dict[str, object] | None:
     """Create a document in a folder, or return ``None`` if the folder is missing."""
 
@@ -157,6 +216,7 @@ def create_document(
             updated_at=now,
         )
         session.add(document)
+        document.tags = _resolve_tags(session, list(tags))
         folder.updated_at = now
         session.flush()
         return _document_to_dict(document)
@@ -166,7 +226,7 @@ def update_document(
     factory: sessionmaker[Session],
     folder_id: str,
     document_id: str,
-    updates: dict[str, str],
+    updates: dict[str, str | list[str]],
 ) -> dict[str, object] | None:
     """Apply field updates to a document, or return ``None`` if it doesn't exist."""
 
@@ -174,6 +234,7 @@ def update_document(
         document = (
             session.query(Document)
             .options(selectinload(Document.files))
+            .options(selectinload(Document.tags))
             .filter(Document.id == document_id, Document.folder_id == folder_id)
             .one_or_none()
         )
@@ -182,6 +243,8 @@ def update_document(
         for key in ("name", "date", "time", "description", "content", "summary"):
             if key in updates:
                 setattr(document, key, str(updates[key]).strip())
+        if "tags" in updates:
+            document.tags = _resolve_tags(session, updates["tags"])
         now = _now()
         document.updated_at = now
         document.folder.updated_at = now
@@ -377,3 +440,21 @@ def find_duplicates(factory: sessionmaker[Session]) -> dict[str, object]:
             "unhashed": unhashed,
             "reclaimable_bytes": sum(group["reclaimable_bytes"] for group in groups),
         }
+
+
+def list_tags(factory: sessionmaker[Session]) -> list[dict[str, object]]:
+    """Return all tags with their document counts, sorted by name."""
+
+    with factory() as session:
+        rows = (
+            session.query(Tag.name, func.count(Document.id).label("document_count"))
+            .select_from(Tag)
+            .outerjoin(Tag.documents)
+            .group_by(Tag.id, Tag.name, Tag.key)
+            .order_by(Tag.key)
+            .all()
+        )
+        return [
+            {"name": row[0], "document_count": row[1]}
+            for row in rows
+        ]

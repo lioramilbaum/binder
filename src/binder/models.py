@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Column, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+
+document_tags = Table(
+    "document_tags",
+    Base.metadata,
+    Column("document_id", Text, ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Text, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True, index=True),
+)
 
 
 class Folder(Base):
@@ -50,6 +58,9 @@ class Document(Base):
         cascade="all, delete-orphan",
         order_by="DocumentFile.created_at",
     )
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary=document_tags, back_populates="documents", order_by="Tag.key"
+    )
 
 
 class DocumentFile(Base):
@@ -77,3 +88,18 @@ class DocumentFile(Base):
     created_at: Mapped[str] = mapped_column(String(64))
 
     document: Mapped[Document] = relationship(back_populates="files")
+
+
+class Tag(Base):
+    """A global tag that can be attached to documents."""
+
+    __tablename__ = "tags"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    documents: Mapped[list["Document"]] = relationship(
+        secondary=document_tags, back_populates="tags"
+    )

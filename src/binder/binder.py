@@ -20,11 +20,32 @@ from .config import (
 )
 from .folders import Folders
 from .i18n import Translator
+from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags
 
 
 class Binder(BaseHTTPRequestHandler):
     store = Folders()
     max_upload_size = MAX_UPLOAD_SIZE
+
+    @staticmethod
+    def _parse_tags(value: object) -> tuple[list[str] | None, str | None]:
+        """Parse and validate a list of tags.
+
+        Returns (tags, error_message). On success, error_message is None.
+        """
+        if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+            return None, "בקשה לא תקינה"
+
+        tags = normalize_tags(value)
+
+        if len(tags) > MAX_TAGS_PER_DOCUMENT:
+            return None, "ניתן להוסיף עד 20 תגיות"
+
+        for tag in tags:
+            if len(tag) > MAX_TAG_LENGTH:
+                return None, "הטקסט ארוך מדי"
+
+        return tags, None
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -43,6 +64,9 @@ class Binder(BaseHTTPRequestHandler):
             return
         if path == "/api/duplicates":
             self._send_json(self.store.duplicates())
+            return
+        if path == "/api/tags":
+            self._send_json(self.store.tags())
             return
         if path == "/api/folders":
             self._send_json(self.store.list())
@@ -136,7 +160,7 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
 
-        allowed_keys = {"name", "date", "time", "description", "content", "summary"}
+        allowed_keys = {"name", "date", "time", "description", "content", "summary", "tags"}
         updates = {k: v for k, v in payload.items() if k in allowed_keys}
 
         if not updates:
@@ -145,10 +169,21 @@ class Binder(BaseHTTPRequestHandler):
             )
             return
 
-        if any(not isinstance(value, str) for value in updates.values()):
+        # Validate tags if present
+        if "tags" in updates:
+            tags, tag_error = self._parse_tags(updates["tags"])
+            if tag_error:
+                self._send_json({"error": tag_error}, HTTPStatus.BAD_REQUEST)
+                return
+            updates["tags"] = tags
+
+        if any(not isinstance(value, (str, list)) for value in updates.values()):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
-        updates = {key: value.strip() for key, value in updates.items()}
+        updates = {
+            key: value.strip() if isinstance(value, str) else value
+            for key, value in updates.items()
+        }
         if "name" in updates and not updates["name"]:
             self._send_json(
                 {"error": "יש להזין שם ותאריך למסמך"}, HTTPStatus.BAD_REQUEST
@@ -203,6 +238,11 @@ class Binder(BaseHTTPRequestHandler):
         content = str(payload.get("content", "")).strip()
         summary = str(payload.get("summary", "")).strip()
 
+        tags, tag_error = self._parse_tags(payload.get("tags", []))
+        if tag_error:
+            self._send_json({"error": tag_error}, HTTPStatus.BAD_REQUEST)
+            return
+
         if not name or not document_date:
             self._send_json(
                 {"error": "יש להזין שם ותאריך למסמך"}, HTTPStatus.BAD_REQUEST
@@ -231,6 +271,7 @@ class Binder(BaseHTTPRequestHandler):
             content,
             document_time,
             summary=summary,
+            tags=tags,
         )
         if document is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)

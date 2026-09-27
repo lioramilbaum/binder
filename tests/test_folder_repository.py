@@ -172,6 +172,68 @@ class FolderRepositoryTests(unittest.TestCase):
             folder_repository.remove_file(self.factory, "missing-folder", document["id"], "missing")
         )
 
+    def test_create_document_creates_missing_tags(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+
+        document = folder_repository.create_document(
+            self.factory, folder["id"], "2026-08-30", "מסמך", tags=["תקציב", "Urgent"]
+        )
+
+        self.assertEqual(set(document["tags"]), {"תקציב", "Urgent"})
+        tags = folder_repository.list_tags(self.factory)
+        self.assertEqual(len(tags), 2)
+        tag_names = {t["name"] for t in tags}
+        self.assertEqual(tag_names, {"תקציב", "Urgent"})
+        budget_tag = next(t for t in tags if t["name"] == "תקציב")
+        self.assertEqual(budget_tag["document_count"], 1)
+
+    def test_existing_tag_is_reused_ignoring_case_and_spacing(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+
+        doc_a = folder_repository.create_document(
+            self.factory, folder["id"], "2026-08-30", "א", tags=["Budget"]
+        )
+        doc_b = folder_repository.create_document(
+            self.factory, folder["id"], "2026-08-31", "ב", tags=["  budget  ", "BUDGET"]
+        )
+
+        self.assertEqual(doc_b["tags"], ["Budget"])
+        tags = folder_repository.list_tags(self.factory)
+        budget_tag = next(t for t in tags if t["name"] == "Budget")
+        self.assertEqual(budget_tag["document_count"], 2)
+
+    def test_update_document_replaces_tags_and_keeps_them_when_omitted(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+        doc = folder_repository.create_document(
+            self.factory, folder["id"], "2026-08-30", "מסמך", tags=["א", "ב"]
+        )
+
+        updated = folder_repository.update_document(
+            self.factory, folder["id"], doc["id"], {"tags": ["ב", "ג"]}
+        )
+        self.assertEqual(set(updated["tags"]), {"ב", "ג"})
+
+        updated = folder_repository.update_document(
+            self.factory, folder["id"], doc["id"], {"name": "חדש"}
+        )
+        self.assertEqual(sorted(updated["tags"], key=str.lower), ["ב", "ג"])
+
+        updated = folder_repository.update_document(
+            self.factory, folder["id"], doc["id"], {"tags": []}
+        )
+        self.assertEqual(updated["tags"], [])
+
+    def test_folder_listing_includes_document_tags(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+        folder_repository.create_document(
+            self.factory, folder["id"], "2026-08-30", "מסמך", tags=["Important"]
+        )
+
+        folders = folder_repository.list_folders(self.factory)
+        doc = folders[0]["documents"][0]
+
+        self.assertEqual(doc["tags"], ["Important"])
+
 
 _TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
 

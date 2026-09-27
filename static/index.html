@@ -55,6 +55,7 @@
           </div>
           <div class="search-bar">
             <input id="document-search" type="search" placeholder="@@search_documents@@" aria-label="@@search_documents@@">
+            <div id="tag-filter" class="tag-filter" role="group" aria-label="@@filter_by_tags@@" hidden></div>
           </div>
           <div id="documents" class="document-list" aria-live="polite"></div>
           <div id="documents-empty-state" class="empty-state" hidden>
@@ -114,6 +115,12 @@
         <textarea id="document-content" dir="auto" class="content-input" name="content" rows="10" placeholder="@@content_placeholder@@"></textarea>
         <label for="document-summary">@@summary@@ <span>@@optional@@</span></label>
         <textarea id="document-summary" dir="auto" name="summary" maxlength="1000" rows="3" placeholder="@@summary_placeholder@@"></textarea>
+        <label for="document-tag-input">@@tags@@ <span>@@optional@@</span></label>
+        <div class="tag-editor" id="document-tag-editor">
+          <div class="tag-list" id="document-tags"></div>
+          <input id="document-tag-input" dir="auto" list="tag-suggestions" maxlength="50" autocomplete="off" placeholder="@@tags_placeholder@@">
+        </div>
+        <datalist id="tag-suggestions"></datalist>
         <label for="document-files">@@files@@ <span>@@files_optional@@</span></label>
         <div class="file-drop-zone" id="document-file-drop-zone" role="button" tabindex="0">
           <input id="document-files" name="files" type="file" multiple hidden>
