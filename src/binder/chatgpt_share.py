@@ -9,6 +9,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import math
 import re
 import socket
 import ssl
@@ -16,6 +17,7 @@ import threading
 import time as clock
 import zlib
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 from uuid import UUID
@@ -50,6 +52,20 @@ class SharePreview:
     transcript: str
     message_count: int
     warnings: tuple[str, ...]
+    source_first_message_at: str | None = None
+
+
+def _source_message_time(value: object) -> str | None:
+    """Canonical UTC time from a numeric Unix timestamp, if representable."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        seconds = float(value)
+        if not math.isfinite(seconds):
+            return None
+        return datetime.fromtimestamp(seconds, timezone.utc).isoformat(timespec="microseconds")
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 class _Deadline:
@@ -394,6 +410,8 @@ def parse_share_page(source_url: str, page: bytes) -> SharePreview:
         turns = []
         omitted = False
         non_visible_omitted = False
+        source_first_message_at = None
+        timestamp_unavailable = False
         for entry in linear:
             if not isinstance(entry, dict):
                 raise ShareImportError("unsupported_format")
@@ -466,7 +484,10 @@ def parse_share_page(source_url: str, page: bytes) -> SharePreview:
                 omitted = True
             text = "\n\n".join(parts).strip()
             if text:
-                turns.append(f"{'User' if role == 'user' else 'Assistant'}:\n{text}")
+                if not turns:
+                    source_first_message_at = _source_message_time(message.get("create_time"))
+                    timestamp_unavailable = source_first_message_at is None
+                turns.append(f"{'Liora' if role == 'user' else 'AI'}:\n{text}")
         if not turns:
             raise ShareImportError("unsupported_format")
         transcript = "\n\n".join(turns)
@@ -480,9 +501,10 @@ def parse_share_page(source_url: str, page: bytes) -> SharePreview:
             code for condition, code in (
                 (non_visible_omitted, "non_visible_omitted"),
                 (omitted, "non_text_omitted"),
+                (timestamp_unavailable, "timestamp_unavailable"),
             ) if condition
         )
-        return SharePreview(source_url, title, transcript, len(turns), warnings)
+        return SharePreview(source_url, title, transcript, len(turns), warnings, source_first_message_at)
     except (UnicodeDecodeError, RecursionError, KeyError, TypeError, ValueError):
         raise ShareImportError("unsupported_format") from None
 

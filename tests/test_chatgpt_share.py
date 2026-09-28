@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, inspect, text
 from binder.binder import Binder, _SharePreviewCache
 from binder.chatgpt_share import (
     ShareImportError, SharePreview, fetch_share_page, parse_share_page,
-    validate_share_url, _public_addresses, _PinnedHTTPSConnection,
+    validate_share_url, _public_addresses, _PinnedHTTPSConnection, _source_message_time,
 )
 
 
@@ -34,7 +34,7 @@ def page(entries, *, title="Synthetic conversation"):
 
 
 def message(role, content):
-    return {"message": {"author": {"role": role}, "content": content}}
+    return {"message": {"author": {"role": role}, "content": content, "create_time": 1700000000}}
 
 
 def message_with(role, content, **fields):
@@ -44,6 +44,56 @@ def message_with(role, content, **fields):
 
 
 class ParserTests(unittest.TestCase):
+    def test_timestamp_conversion_accepts_epoch_and_rejects_invalid_values(self):
+        self.assertEqual(_source_message_time(0), "1970-01-01T00:00:00.000000+00:00")
+        self.assertEqual(_source_message_time(-0.5), "1969-12-31T23:59:59.500000+00:00")
+        for value in (True, False, None, "0", float("nan"), float("inf"), 10**1000):
+            with self.subTest(value=value):
+                self.assertIsNone(_source_message_time(value))
+
+    def test_labels_order_and_fractional_source_time(self):
+        entries = [
+            message_with("user", {"content_type": "text", "parts": ["First"]}, create_time=1700000000.25),
+            message_with("assistant", {"content_type": "text", "parts": ["Reply"]}, create_time=1700000001),
+            message_with("user", {"content_type": "text", "parts": ["Last"]}, create_time=1700000002),
+        ]
+        parsed = parse_share_page(LINK, page(entries))
+        self.assertEqual(parsed.transcript, "Liora:\nFirst\n\nAI:\nReply\n\nLiora:\nLast")
+        self.assertEqual(parsed.source_first_message_at, "2023-11-14T22:13:20.250000+00:00")
+        self.assertEqual(parsed.warnings, ())
+
+    def test_missing_or_invalid_first_visible_timestamp_never_uses_later_one(self):
+        missing = message("user", {"content_type": "text", "parts": ["First"]})
+        del missing["message"]["create_time"]
+        parsed = parse_share_page(LINK, page([
+            missing, message_with("assistant", {"content_type": "text", "parts": ["Later"]},
+                                  create_time=1700000000),
+        ]))
+        self.assertIsNone(parsed.source_first_message_at)
+        self.assertEqual(parsed.warnings, ("timestamp_unavailable",))
+        for value in (None, True, False, "1700000000", float("nan"), float("inf"), 10**1000):
+            with self.subTest(value=value):
+                first = message_with("user", {"content_type": "text", "parts": ["First"]}, create_time=value)
+                second = message_with("assistant", {"content_type": "text", "parts": ["Later"]}, create_time=1700000000)
+                parsed = parse_share_page(LINK, page([first, second]))
+                self.assertIsNone(parsed.source_first_message_at)
+                self.assertEqual(parsed.warnings, ("timestamp_unavailable",))
+
+    def test_timestamp_from_first_emitted_visible_message_only(self):
+        entries = [
+            message_with("system", {"content_type": "text", "parts": ["System"]}, create_time=10),
+            message_with("assistant", {"content_type": "text", "parts": ["Hidden"]}, create_time=20,
+                         metadata={"is_visually_hidden_from_conversation": True}),
+            message_with("assistant", {"content_type": "text", "parts": ["Tool"]}, create_time=30,
+                         recipient="web.run"),
+            message_with("user", {"content_type": "text", "parts": [""]}, create_time=40),
+            message_with("user", {"content_type": "text", "parts": ["Visible"]}, create_time=50),
+        ]
+        parsed = parse_share_page(LINK, page(entries))
+        self.assertEqual(parsed.transcript, "Liora:\nVisible")
+        self.assertEqual(parsed.source_first_message_at, "1970-01-01T00:00:50.000000+00:00")
+        self.assertIn("non_visible_omitted", parsed.warnings)
+
     def test_order_unicode_code_and_media_warning(self):
         entries = [
             message("user", {"content_type": "text", "parts": ["שלום"]}),
@@ -53,15 +103,16 @@ class ParserTests(unittest.TestCase):
         parsed = parse_share_page(LINK, page(entries))
         self.assertEqual(parsed.message_count, 3)
         self.assertEqual(parsed.title, "Synthetic conversation")
-        self.assertEqual(parsed.transcript, "User:\nשלום\n\nAssistant:\n```python\nprint('hi')\n```\n\nUser:\nSee this")
+        self.assertEqual(parsed.transcript, "Liora:\nשלום\n\nAI:\n```python\nprint('hi')\n```\n\nLiora:\nSee this")
         self.assertEqual(parsed.warnings, ("non_text_omitted",))
+        self.assertEqual(parsed.source_first_message_at, "2023-11-14T22:13:20.000000+00:00")
 
     def test_constant_pool_back_reference(self):
         entries = [message("user", {"content_type": "text", "parts": ["Referenced"]})]
         pool = [{}, "route", 4, "other", {"_6": 5, "title": "Reference"}, entries, "linear_conversation"]
         chunk = json.dumps(json.dumps(pool))
         parsed = parse_share_page(LINK, f'<script>streamController.enqueue({chunk});</script>'.encode())
-        self.assertEqual(parsed.transcript, "User:\nReferenced")
+        self.assertEqual(parsed.transcript, "Liora:\nReferenced")
 
     def test_complete_conversation_wins_over_flattened_pool_root(self):
         entries = [message("user", {"content_type": "text", "parts": ["Visible"]})]
@@ -70,7 +121,7 @@ class ParserTests(unittest.TestCase):
         chunk = json.dumps(json.dumps(pool))
         parsed = parse_share_page(LINK, f'<script>streamController.enqueue({chunk});</script>'.encode())
         self.assertEqual(parsed.title, "Complete")
-        self.assertEqual(parsed.transcript, "User:\nVisible")
+        self.assertEqual(parsed.transcript, "Liora:\nVisible")
 
     def test_visible_multimodal_text_lists_preserve_order(self):
         entries = [message_with("user", {"content_type": "multimodal_text", "parts": [
@@ -78,7 +129,7 @@ class ParserTests(unittest.TestCase):
             "third", {"content_type": "text", "text": ["fourth"]},
         ]}, recipient="")]
         parsed = parse_share_page(LINK, page(entries))
-        self.assertEqual(parsed.transcript, "User:\nfirst\n\nשני\n\nthird\n\nfourth")
+        self.assertEqual(parsed.transcript, "Liora:\nfirst\n\nשני\n\nthird\n\nfourth")
         self.assertEqual(parsed.warnings, ())
 
     def test_multimodal_non_string_and_internal_segments_are_flagged(self):
@@ -87,7 +138,7 @@ class ParserTests(unittest.TestCase):
             {"content_type": "thoughts", "text": "private"},
         ]})]
         parsed = parse_share_page(LINK, page(entries))
-        self.assertEqual(parsed.transcript, "Assistant:\nvisible")
+        self.assertEqual(parsed.transcript, "AI:\nvisible")
         self.assertEqual(parsed.warnings, ("non_visible_omitted", "non_text_omitted"))
 
     def test_empty_recipient_is_visible_but_tool_recipient_is_not(self):
@@ -96,7 +147,7 @@ class ParserTests(unittest.TestCase):
             message_with("assistant", {"content_type": "text", "parts": ["tool only"]}, recipient="web.run"),
         ]
         parsed = parse_share_page(LINK, page(entries))
-        self.assertEqual(parsed.transcript, "User:\nvisible")
+        self.assertEqual(parsed.transcript, "Liora:\nvisible")
         self.assertEqual(parsed.warnings, ("non_visible_omitted",))
 
     def test_system_and_tool_roles_are_excluded_with_warning(self):
@@ -105,7 +156,7 @@ class ParserTests(unittest.TestCase):
             with self.subTest(role=role):
                 internal = message(role, {"content_type": "text", "parts": ["Not visible"]})
                 parsed = parse_share_page(LINK, page([visible, internal]))
-                self.assertEqual(parsed.transcript, "User:\nVisible")
+                self.assertEqual(parsed.transcript, "Liora:\nVisible")
                 self.assertEqual(parsed.warnings, ("non_visible_omitted",))
 
     def test_hidden_tool_directed_and_internal_assistant_content_is_excluded(self):
@@ -129,7 +180,7 @@ class ParserTests(unittest.TestCase):
         for hidden in excluded:
             with self.subTest(hidden=hidden):
                 parsed = parse_share_page(LINK, page([visible, hidden]))
-                self.assertEqual(parsed.transcript, "Assistant:\nVisible answer" if hidden is not excluded[-1] else "Assistant:\nVisible answer\n\nAssistant:\nVisible prefix")
+                self.assertEqual(parsed.transcript, "AI:\nVisible answer" if hidden is not excluded[-1] else "AI:\nVisible answer\n\nAI:\nVisible prefix")
                 self.assertIn("non_visible_omitted", parsed.warnings)
 
     def test_fails_closed_when_only_non_visible_messages_remain(self):
@@ -391,7 +442,8 @@ class FetchTests(unittest.TestCase):
 
 class EndpointTests(unittest.TestCase):
     def setUp(self):
-        self.preview = SharePreview(LINK, "Test", "User:\nhello\n\nAssistant:\nשלום", 2, ())
+        self.preview = SharePreview(LINK, "Test", "Liora:\nhello\n\nAI:\nשלום", 2, (),
+                                    "2023-11-14T22:13:20.250000+00:00")
         self.cache = _SharePreviewCache()
 
     def post(self, suffix, payload, folder="folder", exists=True):
@@ -413,14 +465,19 @@ class EndpointTests(unittest.TestCase):
             preview_handler = self.post("share-preview", {"url": LINK})
         importer.assert_called_once_with(LINK)
         preview_handler.store.create_ai_thread.assert_not_called()
+        self.assertEqual(preview_handler._send_json.call_args.args[0]["source_first_message_at"],
+                         self.preview.source_first_message_at)
         preview_id = preview_handler._send_json.call_args.args[0]["preview_id"]
         confirm = self.post("share-confirm", {
-            "preview_id": preview_id, "conversation_date": "2026-09-28", "summary": "My note",
+            "preview_id": preview_id, "conversation_date": "2026-09-28",
+            "conversation_time": "14:35", "summary": "My note",
         })
         confirm.store.create_ai_thread.assert_called_once_with(
             "folder", "Test", "ChatGPT", "2026-09-28", self.preview.transcript, "My note",
             source_url=LINK,
             transcript_sha256=hashlib.sha256(self.preview.transcript.encode()).hexdigest(),
+            conversation_time="14:35",
+            source_first_message_at=self.preview.source_first_message_at,
         )
         self.assertEqual(confirm._send_json.call_args.args[1], 201)
         again = self.post("share-confirm", {"preview_id": preview_id, "conversation_date": "2026-09-28"})
@@ -439,8 +496,50 @@ class EndpointTests(unittest.TestCase):
         importer.assert_not_called()
         self.assertEqual(handler._send_json.call_args.args[1], 404)
 
+    def test_import_time_is_optional_and_source_time_cannot_be_submitted(self):
+        token = self.cache.put("folder", self.preview)
+        rejected = self.post("share-confirm", {
+            "preview_id": token, "conversation_date": "2026-09-28",
+            "source_first_message_at": "2000-01-01T00:00:00+00:00",
+        })
+        self.assertEqual(rejected._send_json.call_args.args[1], 400)
+        saved = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
+        self.assertEqual(saved.store.create_ai_thread.call_args.kwargs["conversation_time"], None)
+        self.assertEqual(saved.store.create_ai_thread.call_args.kwargs["source_first_message_at"],
+                         self.preview.source_first_message_at)
+
+    def test_invalid_import_time_does_not_consume_preview(self):
+        for invalid in ("24:00", "9:00", "12:60", 123):
+            with self.subTest(invalid=invalid):
+                token = self.cache.put("folder", self.preview)
+                rejected = self.post("share-confirm", {
+                    "preview_id": token, "conversation_date": "2026-09-28", "conversation_time": invalid,
+                })
+                self.assertEqual(rejected._send_json.call_args.args[1], 400)
+                rejected.store.create_ai_thread.assert_not_called()
+                saved = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
+                self.assertEqual(saved._send_json.call_args.args[1], 201)
+
 
 class MigrationTests(unittest.TestCase):
+    def test_existing_ai_threads_gain_nullable_time_columns(self):
+        path = Path(__file__).resolve().parents[1] / "migrations/versions/20260929_07_add_ai_thread_conversation_time.py"
+        spec = importlib.util.spec_from_file_location("ai_thread_time_migration", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE ai_threads (id TEXT PRIMARY KEY, title TEXT NOT NULL)"))
+            connection.execute(text("INSERT INTO ai_threads (id, title) VALUES ('old', 'Legacy')"))
+            operations = Operations(MigrationContext.configure(connection))
+            with patch.object(migration, "op", operations):
+                migration.upgrade()
+            row = connection.execute(text(
+                "SELECT title, conversation_time, source_first_message_at FROM ai_threads WHERE id = 'old'"
+            )).one()
+        self.assertEqual(row, ("Legacy", None, None))
+        self.assertEqual(migration.down_revision, "20260928_06")
+
     def test_existing_ai_threads_gain_nullable_import_columns(self):
         path = Path(__file__).resolve().parents[1] / "migrations/versions/20260928_06_add_ai_thread_import_source.py"
         spec = importlib.util.spec_from_file_location("ai_thread_import_migration", path)

@@ -57,15 +57,18 @@ can vary by locale, so the original file remains the authoritative source.
 
 Each folder has an archive for historic AI conversations. To add one manually,
 choose **Add AI thread**, then enter a title, conversation date, and the full
-conversation text. The AI service and your own summary are optional.
+conversation text. The conversation time, AI service, and your own summary are optional.
 
 To import a public ChatGPT conversation, use ChatGPT's **Share** action and copy
 the `https://chatgpt.com/share/<id>` link. In Binder, choose **Import ChatGPT
 share link**, paste it, and preview the complete extracted text. Check the title,
-message count, transcript, and omission warning before choosing a conversation
-date and saving. The date and optional summary are yours to enter. Binder saves
-the exact previewed transcript, link, import time, and SHA-256 hash of the saved
-UTF-8 text. Saved threads appear newest first in expandable cards. No AI API key
+message count, transcript, and omission warning before saving. When the first
+visible message has a usable timestamp, Binder suggests its date and time in
+your local timezone; you can edit both. Otherwise, enter a date yourself and
+optionally a time. Binder saves the exact previewed transcript, link, import
+time, the first visible message's source UTC timestamp when available, and the
+SHA-256 hash of the saved UTF-8 text. Saved threads appear newest first in
+expandable cards. No AI API key
 or paid service is needed for this import. Archived threads cannot be edited or
 deleted through the interface.
 

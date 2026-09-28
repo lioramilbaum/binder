@@ -114,12 +114,14 @@ def _ai_thread_to_dict(thread: AiThread) -> dict[str, object]:
         "title": thread.title,
         "provider": thread.provider,
         "conversation_date": thread.conversation_date,
+        "conversation_time": thread.conversation_time,
         "transcript": thread.transcript,
         "summary": thread.summary,
         "created_at": thread.created_at,
         "source_url": thread.source_url,
         "imported_at": thread.imported_at,
         "transcript_sha256": thread.transcript_sha256,
+        "source_first_message_at": thread.source_first_message_at,
     }
 
 
@@ -178,7 +180,10 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
                 _ai_thread_to_dict(thread)
                 for thread in sorted(
                     folder.ai_threads,
-                    key=lambda thread: (thread.conversation_date, thread.created_at, thread.id),
+                    key=lambda thread: (
+                        thread.conversation_date, thread.conversation_time or "",
+                        thread.created_at, thread.id,
+                    ),
                     reverse=True,
                 )
             ],
@@ -220,8 +225,10 @@ def create_ai_thread(
     transcript: str,
     summary: str,
     *,
+    conversation_time: str | None = None,
     source_url: str | None = None,
     transcript_sha256: str | None = None,
+    source_first_message_at: str | None = None,
 ) -> dict[str, object] | None:
     """Save an archived conversation, or return None for an absent folder."""
 
@@ -236,12 +243,14 @@ def create_ai_thread(
             title=title,
             provider=provider,
             conversation_date=conversation_date,
+            conversation_time=conversation_time,
             transcript=transcript,
             summary=summary,
             created_at=now,
             source_url=source_url,
             imported_at=now if source_url else None,
             transcript_sha256=transcript_sha256,
+            source_first_message_at=source_first_message_at,
         )
         session.add(thread)
         folder.updated_at = now

@@ -30,6 +30,7 @@ const shareErrors = {
   unsupported_format: @@share_unsupported_format@@,
   preview_unavailable: @@share_preview_unavailable@@,
   invalid_date: @@share_invalid_date@@,
+  invalid_time: @@share_invalid_time@@,
   folder_not_found: @@share_folder_not_found@@,
   invalid_request: @@share_invalid_request@@,
 };
@@ -44,6 +45,18 @@ const dateFormatter = new Intl.DateTimeFormat(@@date_locale@@, {
   month: "long",
   year: "numeric",
 });
+
+function localDateTimeInputs(utcValue) {
+  if (!utcValue) return null;
+  const value = new Date(utcValue);
+  const year = value.getFullYear();
+  if (Number.isNaN(value.getTime()) || year < 1 || year > 9999) return null;
+  const twoDigits = (number) => String(number).padStart(2, "0");
+  return {
+    date: `${String(year).padStart(4, "0")}-${twoDigits(value.getMonth() + 1)}-${twoDigits(value.getDate())}`,
+    time: `${twoDigits(value.getHours())}:${twoDigits(value.getMinutes())}`,
+  };
+}
 
 function format(template, values) {
   return template.replace(/\{(\w+)\}/g, (_, key) => values[key]);
@@ -420,7 +433,7 @@ function renderAiThreads(threads) {
     title.dir = "auto";
     const dateText = dateFormatter.format(new Date(`${thread.conversation_date}T00:00:00`));
     const meta = document.createElement("span");
-    meta.textContent = thread.provider ? `${dateText} · ${thread.provider}` : dateText;
+    meta.textContent = [dateText, thread.conversation_time, thread.provider].filter(Boolean).join(" · ");
     meta.dir = "auto";
     headingText.append(title, meta);
     const marker = document.createElement("span");
@@ -814,9 +827,12 @@ aiShareForm.addEventListener("submit", async (event) => {
     document.querySelector("#ai-share-warnings").textContent = [
       result.warnings.includes("non_visible_omitted") ? @@share_non_visible_omitted@@ : "",
       result.warnings.includes("non_text_omitted") ? @@share_non_text_omitted@@ : "",
+      result.warnings.includes("timestamp_unavailable") ? @@share_timestamp_unavailable@@ : "",
     ].filter(Boolean).join(" ");
     document.querySelector("#ai-share-transcript").textContent = result.transcript;
-    document.querySelector("#ai-share-date").value = new Date().toISOString().slice(0, 10);
+    const sourceDateTime = localDateTimeInputs(result.source_first_message_at);
+    document.querySelector("#ai-share-date").value = sourceDateTime?.date || "";
+    document.querySelector("#ai-share-time").value = sourceDateTime?.time || "";
     aiShareForm.hidden = true;
     aiShareConfirmForm.hidden = false;
   } catch {
@@ -837,6 +853,7 @@ aiShareConfirmForm.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         preview_id: aiSharePreviewId,
         conversation_date: document.querySelector("#ai-share-date").value,
+        conversation_time: document.querySelector("#ai-share-time").value,
         summary: document.querySelector("#ai-share-summary").value,
       }),
     });
@@ -881,6 +898,7 @@ aiThreadForm.addEventListener("submit", async (event) => {
         title: data.get("title"),
         provider: data.get("provider"),
         conversation_date: data.get("conversation_date"),
+        conversation_time: data.get("conversation_time"),
         transcript: data.get("transcript"),
         summary: data.get("summary"),
       }),

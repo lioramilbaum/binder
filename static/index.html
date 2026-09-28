@@ -115,8 +115,16 @@
         <input id="ai-thread-title" name="title" dir="auto" maxlength="200" required>
         <label for="ai-thread-provider">@@ai_thread_provider@@ <span>@@optional@@</span></label>
         <input id="ai-thread-provider" name="provider" dir="auto" maxlength="100" placeholder="@@ai_thread_provider_placeholder@@">
-        <label for="ai-thread-date">@@ai_thread_date@@</label>
-        <input id="ai-thread-date" name="conversation_date" type="date" required>
+        <div class="date-time-fields">
+          <div>
+            <label for="ai-thread-date">@@ai_thread_date@@</label>
+            <input id="ai-thread-date" name="conversation_date" type="date" required>
+          </div>
+          <div>
+            <label for="ai-thread-time">@@ai_thread_time@@ <span>@@optional@@</span></label>
+            <input id="ai-thread-time" name="conversation_time" type="time">
+          </div>
+        </div>
         <label for="ai-thread-transcript">@@ai_thread_transcript@@</label>
         <textarea id="ai-thread-transcript" name="transcript" dir="auto" maxlength="200000" rows="12" required></textarea>
         <label for="ai-thread-summary">@@ai_thread_summary@@ <span>@@optional@@</span></label>
@@ -153,8 +161,16 @@
         <p id="ai-share-warnings" class="field-hint" role="status"></p>
         <h3 id="ai-share-transcript-heading">@@ai_thread_transcript@@</h3>
         <pre id="ai-share-transcript" class="share-transcript" dir="auto" tabindex="0" aria-labelledby="ai-share-transcript-heading"></pre>
-        <label for="ai-share-date">@@ai_thread_date@@</label>
-        <input id="ai-share-date" name="conversation_date" type="date" required>
+        <div class="date-time-fields">
+          <div>
+            <label for="ai-share-date">@@ai_thread_date@@</label>
+            <input id="ai-share-date" name="conversation_date" type="date" required>
+          </div>
+          <div>
+            <label for="ai-share-time">@@ai_thread_time@@ <span>@@optional@@</span></label>
+            <input id="ai-share-time" name="conversation_time" type="time">
+          </div>
+        </div>
         <label for="ai-share-summary">@@ai_thread_summary@@ <span>@@optional@@</span></label>
         <textarea id="ai-share-summary" name="summary" dir="auto" maxlength="10000" rows="4"></textarea>
         <p id="ai-share-confirm-error" class="error" role="alert"></p>

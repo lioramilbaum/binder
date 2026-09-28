@@ -64,6 +64,15 @@ class I18nTests(unittest.TestCase):
         self.assertLess(dialog.index('id="ai-share-heading"'), dialog.index('<form id="ai-share-form">'))
         self.assertIn('<form id="ai-share-confirm-form" hidden>', dialog)
 
+    def test_ai_thread_time_controls_and_local_source_prefill(self):
+        for locale in ("he", "en"):
+            page = _get("/", locale)
+            script = _get("/app.js", locale)
+            self.assertIn('id="ai-thread-time" name="conversation_time" type="time"', page)
+            self.assertIn('id="ai-share-time" name="conversation_time" type="time"', page)
+            self.assertIn('localDateTimeInputs(result.source_first_message_at)', script)
+            self.assertIn('result.warnings.includes("timestamp_unavailable")', script)
+
     def test_rejects_unknown_locale(self):
         with self.assertRaises(ValueError):
             Translator("fr")

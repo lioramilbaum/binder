@@ -36,12 +36,16 @@ class Folders:
         transcript: str,
         summary: str,
         *,
+        conversation_time: str | None = None,
         source_url: str | None = None,
         transcript_sha256: str | None = None,
+        source_first_message_at: str | None = None,
     ) -> Optional[dict[str, object]]:
         return folder_repository.create_ai_thread(
             self.factory, folder_id, title, provider, conversation_date, transcript, summary,
-            source_url=source_url, transcript_sha256=transcript_sha256,
+            conversation_time=conversation_time, source_url=source_url,
+            transcript_sha256=transcript_sha256,
+            source_first_message_at=source_first_message_at,
         )
 
     def create_document(

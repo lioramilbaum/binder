@@ -229,7 +229,15 @@ class BinderAiThreadTests(unittest.TestCase):
         handler.store.create_ai_thread.assert_called_once_with(
             "folder", "Case review", "ChatGPT", "2026-09-28",
             "User: hello\nAI: hi", "Follow up",
+            conversation_time=None,
         )
+        self.assertEqual(handler._send_json.call_args.args[1], 201)
+
+    def test_optional_conversation_time(self):
+        payload = {"title": "Review", "conversation_date": "2026-09-28",
+                   "conversation_time": "09:05", "transcript": "Conversation"}
+        handler = self.post(payload)
+        self.assertEqual(handler.store.create_ai_thread.call_args.kwargs["conversation_time"], "09:05")
         self.assertEqual(handler._send_json.call_args.args[1], 201)
 
     def test_rejects_invalid_threads_without_writing(self):
@@ -244,6 +252,9 @@ class BinderAiThreadTests(unittest.TestCase):
             {**base, "provider": "x" * 101},
             {**base, "transcript": "x" * 200_001},
             {**base, "summary": "x" * 10_001},
+            {**base, "conversation_time": "24:00"},
+            {**base, "conversation_time": "9:00"},
+            {**base, "conversation_time": 905},
         ]
         for payload in invalid:
             with self.subTest(payload=payload if len(str(payload)) < 100 else "large"):

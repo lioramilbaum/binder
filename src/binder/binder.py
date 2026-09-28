@@ -189,7 +189,7 @@ class Binder(BaseHTTPRequestHandler):
         self._send_json(self.store.create(name, description), HTTPStatus.CREATED)
 
     def _create_ai_thread(self, path: str, payload: dict[str, object]) -> None:
-        allowed = {"title", "provider", "conversation_date", "transcript", "summary"}
+        allowed = {"title", "provider", "conversation_date", "conversation_time", "transcript", "summary"}
         if set(payload) - allowed or any(
             not isinstance(payload.get(key, ""), str) for key in allowed
         ):
@@ -199,6 +199,7 @@ class Binder(BaseHTTPRequestHandler):
         title = payload.get("title", "").strip()
         provider = payload.get("provider", "").strip()
         conversation_date = payload.get("conversation_date", "")
+        conversation_time = payload.get("conversation_time", "")
         transcript = payload.get("transcript", "")
         summary = payload.get("summary", "")
         if not title or not transcript.strip() or not conversation_date:
@@ -217,10 +218,14 @@ class Binder(BaseHTTPRequestHandler):
         except ValueError:
             self._send_json({"error": "התאריך אינו תקין"}, HTTPStatus.BAD_REQUEST)
             return
+        if conversation_time and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", conversation_time):
+            self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
 
         folder_id = path.removeprefix("/api/folders/").removesuffix("/ai-threads")
         thread = self.store.create_ai_thread(
-            folder_id, title, provider, conversation_date, transcript, summary
+            folder_id, title, provider, conversation_date, transcript, summary,
+            conversation_time=conversation_time or None,
         )
         if thread is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
@@ -248,17 +253,19 @@ class Binder(BaseHTTPRequestHandler):
             "transcript": preview.transcript,
             "message_count": preview.message_count,
             "warnings": list(preview.warnings),
+            "source_first_message_at": preview.source_first_message_at,
         })
 
     def _confirm_shared_thread(self, folder_id: str, payload: dict[str, object]) -> None:
-        if set(payload) - {"preview_id", "conversation_date", "summary"} or any(
+        if set(payload) - {"preview_id", "conversation_date", "conversation_time", "summary"} or any(
             not isinstance(payload.get(key, ""), str)
-            for key in ("preview_id", "conversation_date", "summary")
+            for key in ("preview_id", "conversation_date", "conversation_time", "summary")
         ):
             self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
             return
         token = payload.get("preview_id", "")
         conversation_date = payload.get("conversation_date", "")
+        conversation_time = payload.get("conversation_time", "")
         summary = payload.get("summary", "")
         if not token or len(token) > 100 or len(summary) > 10_000:
             self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
@@ -270,6 +277,9 @@ class Binder(BaseHTTPRequestHandler):
         except ValueError:
             self._send_json({"error": "invalid_date"}, HTTPStatus.BAD_REQUEST)
             return
+        if conversation_time and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", conversation_time):
+            self._send_json({"error": "invalid_time"}, HTTPStatus.BAD_REQUEST)
+            return
         if self.store.get(folder_id) is None:
             self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)
             return
@@ -280,8 +290,10 @@ class Binder(BaseHTTPRequestHandler):
         thread = self.store.create_ai_thread(
             folder_id, preview.title, "ChatGPT", conversation_date,
             preview.transcript, summary,
+            conversation_time=conversation_time or None,
             source_url=preview.source_url,
             transcript_sha256=hashlib.sha256(preview.transcript.encode("utf-8")).hexdigest(),
+            source_first_message_at=preview.source_first_message_at,
         )
         if thread is None:
             self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)

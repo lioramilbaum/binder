@@ -47,12 +47,14 @@ class AiThread(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str] = mapped_column(Text, default="", nullable=False)
     conversation_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    conversation_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     transcript: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(64), nullable=False)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     imported_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     transcript_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_first_message_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     folder: Mapped[Folder] = relationship(back_populates="ai_threads")
 

@@ -68,6 +68,8 @@ class FolderRepositoryTests(unittest.TestCase):
         self.assertIsNone(saved[1]["source_url"])
         self.assertIsNone(saved[1]["imported_at"])
         self.assertIsNone(saved[1]["transcript_sha256"])
+        self.assertIsNone(saved[1]["conversation_time"])
+        self.assertIsNone(saved[1]["source_first_message_at"])
         self.assertEqual(len(folder_repository.get_folder(self.factory, other["id"])["ai_threads"]), 1)
         self.assertNotIn("ai_threads", folder_repository.list_folders(self.factory)[0])
 
@@ -78,8 +80,12 @@ class FolderRepositoryTests(unittest.TestCase):
             self.factory, folder["id"], "Shared", "ChatGPT", "2026-09-28", "Exact text", "",
             source_url="https://chatgpt.com/share/12345678-1234-4234-8234-123456789abc",
             transcript_sha256="a" * 64,
+            conversation_time="14:35",
+            source_first_message_at="2023-11-14T22:13:20.250000+00:00",
         )
         self.assertEqual(imported["transcript_sha256"], "a" * 64)
+        self.assertEqual(imported["conversation_time"], "14:35")
+        self.assertEqual(imported["source_first_message_at"], "2023-11-14T22:13:20.250000+00:00")
         self.assertIsNotNone(imported["imported_at"])
         self.assertEqual(folder_repository.get_folder(self.factory, folder["id"])["ai_threads"][0], imported)
         self.assertEqual(folder_repository.get_folder(self.factory, other["id"])["ai_threads"], [])
@@ -102,6 +108,26 @@ class FolderRepositoryTests(unittest.TestCase):
             )
         saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
         self.assertEqual([thread["id"] for thread in saved], [second["id"], first["id"]])
+
+    def test_ai_threads_on_same_date_order_by_time_then_creation(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        with patch.object(folder_repository, "_now", side_effect=[
+            "2026-09-28T13:00:00+00:00", "2026-09-28T12:00:00+00:00",
+            "2026-09-28T14:00:00+00:00",
+        ]):
+            early = folder_repository.create_ai_thread(
+                self.factory, folder["id"], "Early", "", "2026-09-20", "First", "",
+                conversation_time="09:00",
+            )
+            late = folder_repository.create_ai_thread(
+                self.factory, folder["id"], "Late", "", "2026-09-20", "Second", "",
+                conversation_time="14:00",
+            )
+            unknown = folder_repository.create_ai_thread(
+                self.factory, folder["id"], "Unknown", "", "2026-09-20", "Third", "",
+            )
+        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
+        self.assertEqual([thread["id"] for thread in saved], [late["id"], early["id"], unknown["id"]])
 
     def test_create_document(self):
         folder = folder_repository.create_folder(self.factory, "ועד הבית")
