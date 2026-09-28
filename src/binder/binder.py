@@ -1,5 +1,9 @@
 import json
+import hashlib
 import re
+import secrets
+import threading
+import time as clock
 from datetime import date, time
 from email import policy
 from email.message import Message
@@ -20,12 +24,41 @@ from .config import (
     STATIC_DIR,
 )
 from .folders import Folders
+from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .i18n import Translator
 from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags
 
 
+class _SharePreviewCache:
+    """Small process-local, one-use cache of exact previews awaiting confirmation."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._entries: dict[str, tuple[float, str, SharePreview]] = {}
+
+    def put(self, folder_id: str, preview: SharePreview) -> str:
+        now = clock.monotonic()
+        with self._lock:
+            self._entries = {key: item for key, item in self._entries.items() if item[0] > now}
+            if len(self._entries) >= 16:
+                oldest = min(self._entries, key=lambda key: self._entries[key][0])
+                del self._entries[oldest]
+            token = secrets.token_urlsafe(32)
+            self._entries[token] = (now + 900, folder_id, preview)
+            return token
+
+    def take(self, folder_id: str, token: str) -> SharePreview | None:
+        with self._lock:
+            item = self._entries.get(token)
+            if item is None or item[0] <= clock.monotonic() or item[1] != folder_id:
+                return None
+            del self._entries[token]
+            return item[2]
+
+
 class Binder(BaseHTTPRequestHandler):
     store = Folders()
+    share_previews = _SharePreviewCache()
     max_upload_size = MAX_UPLOAD_SIZE
 
     @staticmethod
@@ -113,13 +146,14 @@ class Binder(BaseHTTPRequestHandler):
             "/documents"
         )
         is_ai_thread_request = bool(re.fullmatch(r"/api/folders/[^/]+/ai-threads", path))
-        if not is_folder_request and not is_document_request and not is_ai_thread_request:
+        share_match = re.fullmatch(r"/api/folders/([^/]+)/ai-threads/share-(preview|confirm)", path)
+        if not is_folder_request and not is_document_request and not is_ai_thread_request and not share_match:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if is_ai_thread_request and (length <= 0 or length > 1_000_000):
+            if (is_ai_thread_request or share_match) and (length <= 0 or length > 1_000_000):
                 self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
             payload = json.loads(self.rfile.read(length))
@@ -135,6 +169,12 @@ class Binder(BaseHTTPRequestHandler):
             return
         if is_ai_thread_request:
             self._create_ai_thread(path, payload)
+            return
+        if share_match:
+            if share_match.group(2) == "preview":
+                self._preview_shared_thread(share_match.group(1), payload)
+            else:
+                self._confirm_shared_thread(share_match.group(1), payload)
             return
 
         name = str(payload.get("name", "")).strip()
@@ -184,6 +224,67 @@ class Binder(BaseHTTPRequestHandler):
         )
         if thread is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
+            return
+        self._send_json(thread, HTTPStatus.CREATED)
+
+    def _preview_shared_thread(self, folder_id: str, payload: dict[str, object]) -> None:
+        if set(payload) != {"url"} or not isinstance(payload["url"], str):
+            self._send_json({"error": "invalid_link"}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.store.get(folder_id) is None:
+            self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        try:
+            preview = import_share_url(payload["url"])
+        except ShareImportError as exc:
+            status = HTTPStatus.BAD_REQUEST if exc.code == "invalid_link" else HTTPStatus.UNPROCESSABLE_ENTITY
+            self._send_json({"error": exc.code}, status)
+            return
+        token = self.share_previews.put(folder_id, preview)
+        self._send_json({
+            "preview_id": token,
+            "source_url": preview.source_url,
+            "title": preview.title,
+            "transcript": preview.transcript,
+            "message_count": preview.message_count,
+            "warnings": list(preview.warnings),
+        })
+
+    def _confirm_shared_thread(self, folder_id: str, payload: dict[str, object]) -> None:
+        if set(payload) - {"preview_id", "conversation_date", "summary"} or any(
+            not isinstance(payload.get(key, ""), str)
+            for key in ("preview_id", "conversation_date", "summary")
+        ):
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        token = payload.get("preview_id", "")
+        conversation_date = payload.get("conversation_date", "")
+        summary = payload.get("summary", "")
+        if not token or len(token) > 100 or len(summary) > 10_000:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", conversation_date):
+                raise ValueError
+            date.fromisoformat(conversation_date)
+        except ValueError:
+            self._send_json({"error": "invalid_date"}, HTTPStatus.BAD_REQUEST)
+            return
+        if self.store.get(folder_id) is None:
+            self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+        preview = self.share_previews.take(folder_id, token)
+        if preview is None:
+            self._send_json({"error": "preview_unavailable"}, HTTPStatus.GONE)
+            return
+        thread = self.store.create_ai_thread(
+            folder_id, preview.title, "ChatGPT", conversation_date,
+            preview.transcript, summary,
+            source_url=preview.source_url,
+            transcript_sha256=hashlib.sha256(preview.transcript.encode("utf-8")).hexdigest(),
+        )
+        if thread is None:
+            self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)
             return
         self._send_json(thread, HTTPStatus.CREATED)
 

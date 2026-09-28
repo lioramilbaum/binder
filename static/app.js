@@ -17,6 +17,22 @@ const aiThreadForm = document.querySelector("#ai-thread-form");
 const aiThreadFormError = document.querySelector("#ai-thread-form-error");
 const aiThreadsElement = document.querySelector("#ai-threads");
 const aiThreadsEmptyState = document.querySelector("#ai-threads-empty-state");
+const aiShareDialog = document.querySelector("#ai-share-dialog");
+const aiShareForm = document.querySelector("#ai-share-form");
+const aiShareConfirmForm = document.querySelector("#ai-share-confirm-form");
+const aiShareError = document.querySelector("#ai-share-error");
+const aiShareConfirmError = document.querySelector("#ai-share-confirm-error");
+let aiSharePreviewId = null;
+const shareErrors = {
+  invalid_link: @@share_invalid_link@@,
+  inaccessible_link: @@share_inaccessible_link@@,
+  too_large: @@share_too_large@@,
+  unsupported_format: @@share_unsupported_format@@,
+  preview_unavailable: @@share_preview_unavailable@@,
+  invalid_date: @@share_invalid_date@@,
+  folder_not_found: @@share_folder_not_found@@,
+  invalid_request: @@share_invalid_request@@,
+};
 let currentFolderId = null;
 let currentDocumentId = null;
 let currentDocuments = [];
@@ -429,6 +445,25 @@ function renderAiThreads(threads) {
       section.append(sectionHeading, content);
       body.append(section);
     }
+    if (thread.source_url) {
+      const source = document.createElement("p");
+      source.className = "ai-thread-source";
+      const sourceLabel = document.createElement("span");
+      sourceLabel.textContent = `${@@share_source@@} `;
+      const link = document.createElement("a");
+      link.href = thread.source_url;
+      link.textContent = thread.source_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      source.append(sourceLabel, link);
+      body.append(source);
+    }
+    if (thread.transcript_sha256) {
+      const hash = document.createElement("p");
+      hash.className = "ai-thread-source";
+      hash.textContent = format(@@share_hash@@, { hash: thread.transcript_sha256 });
+      body.append(hash);
+    }
     card.append(heading, body);
     aiThreadsElement.append(card);
   }
@@ -735,6 +770,88 @@ document.querySelector("#new-ai-thread-button").addEventListener("click", () => 
   aiThreadForm.reset();
   aiThreadFormError.textContent = "";
   aiThreadDialog.showModal();
+});
+document.querySelector("#import-ai-thread-button").addEventListener("click", () => {
+  aiShareForm.reset();
+  aiShareConfirmForm.reset();
+  aiSharePreviewId = null;
+  aiShareError.textContent = "";
+  aiShareConfirmError.textContent = "";
+  aiShareForm.hidden = false;
+  aiShareConfirmForm.hidden = true;
+  aiShareDialog.showModal();
+});
+document.querySelector("#close-ai-share-dialog").addEventListener("click", () => aiShareDialog.close());
+document.querySelector("#cancel-ai-share-dialog").addEventListener("click", () => aiShareDialog.close());
+document.querySelector("#ai-share-back").addEventListener("click", () => {
+  aiSharePreviewId = null;
+  aiShareForm.hidden = false;
+  aiShareConfirmForm.hidden = true;
+});
+aiShareDialog.addEventListener("close", () => { aiSharePreviewId = null; });
+aiShareDialog.addEventListener("click", (event) => {
+  if (event.target === aiShareDialog) aiShareDialog.close();
+});
+aiShareForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  aiShareError.textContent = "";
+  const button = document.querySelector("#ai-share-preview-button");
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads/share-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: (() => { const u = document.querySelector("#ai-share-url").value.trim(); return u.startsWith("https://") ? u : `https://${u}`; })() }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      aiShareError.textContent = shareErrors[result.error] || @@share_unsupported_format@@;
+      return;
+    }
+    aiSharePreviewId = result.preview_id;
+    document.querySelector("#ai-share-preview-title").textContent = result.title;
+    document.querySelector("#ai-share-message-count").textContent = format(@@share_messages@@, { count: result.message_count });
+    document.querySelector("#ai-share-warnings").textContent = [
+      result.warnings.includes("non_visible_omitted") ? @@share_non_visible_omitted@@ : "",
+      result.warnings.includes("non_text_omitted") ? @@share_non_text_omitted@@ : "",
+    ].filter(Boolean).join(" ");
+    document.querySelector("#ai-share-transcript").textContent = result.transcript;
+    document.querySelector("#ai-share-date").value = new Date().toISOString().slice(0, 10);
+    aiShareForm.hidden = true;
+    aiShareConfirmForm.hidden = false;
+  } catch {
+    aiShareError.textContent = @@connect_failed@@;
+  } finally {
+    button.disabled = false;
+  }
+});
+aiShareConfirmForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  aiShareConfirmError.textContent = "";
+  const button = aiShareConfirmForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads/share-confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        preview_id: aiSharePreviewId,
+        conversation_date: document.querySelector("#ai-share-date").value,
+        summary: document.querySelector("#ai-share-summary").value,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      aiShareConfirmError.textContent = shareErrors[result.error] || @@save_failed@@;
+      return;
+    }
+    aiShareDialog.close();
+    await openFolder(currentFolderId, false);
+  } catch {
+    aiShareConfirmError.textContent = @@connect_failed@@;
+  } finally {
+    button.disabled = false;
+  }
 });
 document.querySelector("#close-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());
 document.querySelector("#cancel-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());

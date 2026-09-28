@@ -65,8 +65,24 @@ class FolderRepositoryTests(unittest.TestCase):
         self.assertEqual([thread["id"] for thread in saved], [newer["id"], older["id"]])
         self.assertEqual(saved[1]["transcript"], "User: first\nAI: answer")
         self.assertEqual(saved[1]["summary"], "My note")
+        self.assertIsNone(saved[1]["source_url"])
+        self.assertIsNone(saved[1]["imported_at"])
+        self.assertIsNone(saved[1]["transcript_sha256"])
         self.assertEqual(len(folder_repository.get_folder(self.factory, other["id"])["ai_threads"]), 1)
         self.assertNotIn("ai_threads", folder_repository.list_folders(self.factory)[0])
+
+    def test_import_source_metadata_is_folder_scoped(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        other = folder_repository.create_folder(self.factory, "Other")
+        imported = folder_repository.create_ai_thread(
+            self.factory, folder["id"], "Shared", "ChatGPT", "2026-09-28", "Exact text", "",
+            source_url="https://chatgpt.com/share/12345678-1234-4234-8234-123456789abc",
+            transcript_sha256="a" * 64,
+        )
+        self.assertEqual(imported["transcript_sha256"], "a" * 64)
+        self.assertIsNotNone(imported["imported_at"])
+        self.assertEqual(folder_repository.get_folder(self.factory, folder["id"])["ai_threads"][0], imported)
+        self.assertEqual(folder_repository.get_folder(self.factory, other["id"])["ai_threads"], [])
 
     def test_ai_thread_requires_existing_folder(self):
         self.assertIsNone(folder_repository.create_ai_thread(

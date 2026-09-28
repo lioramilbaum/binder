@@ -71,7 +71,7 @@ button { cursor: pointer; }
 
 .folders-section, .documents-section, .ai-threads-section { padding-bottom: 80px; }
 .documents-section { padding-bottom: 48px; }
-.section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+.section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .section-heading h2 { margin: 0; font-size: 1.4rem; }
 .section-heading span { color: var(--muted); font-size: .9rem; }
 .section-actions { display: flex; align-items: center; gap: 14px; }
@@ -118,6 +118,10 @@ button { cursor: pointer; }
 .ai-thread-content { margin-top: 18px; }
 .ai-thread-content h4 { margin: 0 0 6px; }
 .ai-thread-content pre { margin: 0; }
+.share-transcript { max-height: 320px; margin: 0; padding: 12px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 8px; background: white; font: inherit; line-height: 1.5; }
+#ai-share-transcript-heading { margin: 15px 0 7px; font-size: 1rem; }
+.ai-thread-source { margin: 16px 0 0; overflow-wrap: anywhere; font-size: .8rem; color: var(--muted); }
+.ai-thread-source a { color: var(--accent-dark); }
 .document-actions { display: flex; gap: 10px; margin-bottom: 16px; margin-top: 10px; }
 .edit-content-button { margin-top: 18px; min-height: 38px; }
 .content-input { min-height: 220px; }
@@ -173,6 +177,10 @@ button { cursor: pointer; }
 dialog { width: min(520px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 14px; color: var(--ink); background: var(--card); box-shadow: 0 24px 80px rgba(30, 39, 35, .25); }
 dialog::backdrop { background: rgba(30, 39, 35, .52); }
 dialog form { display: grid; padding: 28px; }
+dialog form[hidden] { display: none; }
+.share-dialog-heading { margin: 0; padding: 28px 28px 0; }
+#ai-share-dialog form { padding-top: 0; }
+#ai-share-preview-title { margin: 18px 0 4px; font-size: 1.2rem; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; margin-bottom: 24px; }
 .dialog-heading h2 { margin: 0; font-size: 1.7rem; }
 .icon-button { padding: 0; border: 0; color: var(--muted); background: none; font-size: 1.8rem; }

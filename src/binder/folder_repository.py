@@ -117,6 +117,9 @@ def _ai_thread_to_dict(thread: AiThread) -> dict[str, object]:
         "transcript": thread.transcript,
         "summary": thread.summary,
         "created_at": thread.created_at,
+        "source_url": thread.source_url,
+        "imported_at": thread.imported_at,
+        "transcript_sha256": thread.transcript_sha256,
     }
 
 
@@ -216,6 +219,9 @@ def create_ai_thread(
     conversation_date: str,
     transcript: str,
     summary: str,
+    *,
+    source_url: str | None = None,
+    transcript_sha256: str | None = None,
 ) -> dict[str, object] | None:
     """Save an archived conversation, or return None for an absent folder."""
 
@@ -233,6 +239,9 @@ def create_ai_thread(
             transcript=transcript,
             summary=summary,
             created_at=now,
+            source_url=source_url,
+            imported_at=now if source_url else None,
+            transcript_sha256=transcript_sha256,
         )
         session.add(thread)
         folder.updated_at = now

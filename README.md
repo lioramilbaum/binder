@@ -55,12 +55,29 @@ can vary by locale, so the original file remains the authoritative source.
 
 ## AI Thread Archive
 
-Each folder has a manual archive for historic AI conversations. Open a folder,
+Each folder has an archive for historic AI conversations. To add one manually,
 choose **Add AI thread**, then enter a title, conversation date, and the full
-conversation text. The AI service and your own summary are optional. Saved
-threads appear newest first in expandable cards. Binder stores the text in its
-PostgreSQL database and does not connect to an AI service for this feature.
-Archived threads cannot be edited or deleted through the interface.
+conversation text. The AI service and your own summary are optional.
+
+To import a public ChatGPT conversation, use ChatGPT's **Share** action and copy
+the `https://chatgpt.com/share/<id>` link. In Binder, choose **Import ChatGPT
+share link**, paste it, and preview the complete extracted text. Check the title,
+message count, transcript, and omission warning before choosing a conversation
+date and saving. The date and optional summary are yours to enter. Binder saves
+the exact previewed transcript, link, import time, and SHA-256 hash of the saved
+UTF-8 text. Saved threads appear newest first in expandable cards. No AI API key
+or paid service is needed for this import. Archived threads cannot be edited or
+deleted through the interface.
+
+A share link exposes a snapshot to anyone with the link; avoid sharing a
+conversation containing sensitive evidence unless you are comfortable with that
+access. Binder fetches the public page during preview and stores the extracted
+text locally in PostgreSQL. Images, attachments, and other non-text content are
+not imported; hidden, tool-directed, and internal messages are excluded. Import
+also depends on ChatGPT's undocumented share-page format,
+which can change. If the link is inaccessible or the format is unsupported, use
+manual entry. See [OpenAI's shared links guidance](https://help.openai.com/en/articles/7925741-chatgpt-shared-links-faq)
+for how sharing works and how to manage shared links.
 
 ### Importing data from the old file-based storage
 

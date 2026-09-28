@@ -38,7 +38,7 @@ class Folder(Base):
 
 
 class AiThread(Base):
-    """A manually archived, historical AI conversation."""
+    """An archived historical AI conversation."""
 
     __tablename__ = "ai_threads"
 
@@ -50,6 +50,9 @@ class AiThread(Base):
     transcript: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    imported_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    transcript_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     folder: Mapped[Folder] = relationship(back_populates="ai_threads")
 

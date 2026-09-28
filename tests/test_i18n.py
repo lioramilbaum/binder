@@ -58,6 +58,12 @@ class I18nTests(unittest.TestCase):
         self.assertIsNone(re.search(r"[֐-׿]", _get("/", "en")))
         self.assertIsNone(re.search(r"[֐-׿]", _get("/app.js", "en")))
 
+    def test_share_dialog_name_stays_visible_in_both_steps(self):
+        page = _get("/", "en")
+        dialog = page.split('<dialog id="ai-share-dialog" aria-labelledby="ai-share-heading">', 1)[1].split("</dialog>", 1)[0]
+        self.assertLess(dialog.index('id="ai-share-heading"'), dialog.index('<form id="ai-share-form">'))
+        self.assertIn('<form id="ai-share-confirm-form" hidden>', dialog)
+
     def test_rejects_unknown_locale(self):
         with self.assertRaises(ValueError):
             Translator("fr")

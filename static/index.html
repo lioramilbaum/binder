@@ -67,7 +67,10 @@
         <section class="ai-threads-section" aria-labelledby="ai-threads-heading">
           <div class="section-heading">
             <h2 id="ai-threads-heading">@@ai_threads@@</h2>
-            <button class="primary-button small-button" id="new-ai-thread-button" type="button">@@new_ai_thread@@</button>
+            <div class="section-actions">
+              <button class="secondary-button small-button" id="import-ai-thread-button" type="button">@@import_ai_thread@@</button>
+              <button class="primary-button small-button" id="new-ai-thread-button" type="button">@@new_ai_thread@@</button>
+            </div>
           </div>
           <div id="ai-threads" class="document-list" aria-live="polite"></div>
           <div id="ai-threads-empty-state" class="empty-state" hidden>
@@ -121,6 +124,42 @@
         <p id="ai-thread-form-error" class="error" role="alert"></p>
         <div class="dialog-actions">
           <button class="secondary-button" id="cancel-ai-thread-dialog" type="button">@@cancel@@</button>
+          <button class="primary-button" type="submit">@@save_ai_thread@@</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="ai-share-dialog" aria-labelledby="ai-share-heading">
+      <div class="dialog-heading share-dialog-heading">
+        <div>
+          <p class="eyebrow">@@ai_threads@@</p>
+          <h2 id="ai-share-heading">@@import_ai_thread@@</h2>
+        </div>
+        <button class="icon-button" id="close-ai-share-dialog" type="button" aria-label="@@close@@">×</button>
+      </div>
+      <form id="ai-share-form">
+        <label for="ai-share-url">@@share_link@@</label>
+        <input id="ai-share-url" name="url" type="url" inputmode="url" autocomplete="off" required placeholder="https://chatgpt.com/share/…">
+        <p class="field-hint">@@share_link_hint@@</p>
+        <p id="ai-share-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-ai-share-dialog" type="button">@@cancel@@</button>
+          <button class="primary-button" id="ai-share-preview-button" type="submit">@@preview_share@@</button>
+        </div>
+      </form>
+      <form id="ai-share-confirm-form" hidden>
+        <h3 id="ai-share-preview-title" dir="auto"></h3>
+        <p id="ai-share-message-count" class="field-hint"></p>
+        <p id="ai-share-warnings" class="field-hint" role="status"></p>
+        <h3 id="ai-share-transcript-heading">@@ai_thread_transcript@@</h3>
+        <pre id="ai-share-transcript" class="share-transcript" dir="auto" tabindex="0" aria-labelledby="ai-share-transcript-heading"></pre>
+        <label for="ai-share-date">@@ai_thread_date@@</label>
+        <input id="ai-share-date" name="conversation_date" type="date" required>
+        <label for="ai-share-summary">@@ai_thread_summary@@ <span>@@optional@@</span></label>
+        <textarea id="ai-share-summary" name="summary" dir="auto" maxlength="10000" rows="4"></textarea>
+        <p id="ai-share-confirm-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="ai-share-back" type="button">@@back@@</button>
           <button class="primary-button" type="submit">@@save_ai_thread@@</button>
         </div>
       </form>
