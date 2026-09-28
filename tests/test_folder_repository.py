@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -44,6 +45,47 @@ class FolderRepositoryTests(unittest.TestCase):
 
     def test_get_missing_folder(self):
         self.assertIsNone(folder_repository.get_folder(self.factory, "missing"))
+
+    def test_ai_threads_persist_in_folder_and_order_by_conversation_date(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        other = folder_repository.create_folder(self.factory, "Other")
+        older = folder_repository.create_ai_thread(
+            self.factory, folder["id"], "Older", "Claude", "2026-01-01",
+            "User: first\nAI: answer", "My note",
+        )
+        newer = folder_repository.create_ai_thread(
+            self.factory, folder["id"], "Newer", "ChatGPT", "2026-02-01",
+            "Full transcript", "",
+        )
+        folder_repository.create_ai_thread(
+            self.factory, other["id"], "Private", "", "2026-03-01", "Elsewhere", "",
+        )
+
+        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
+        self.assertEqual([thread["id"] for thread in saved], [newer["id"], older["id"]])
+        self.assertEqual(saved[1]["transcript"], "User: first\nAI: answer")
+        self.assertEqual(saved[1]["summary"], "My note")
+        self.assertEqual(len(folder_repository.get_folder(self.factory, other["id"])["ai_threads"]), 1)
+        self.assertNotIn("ai_threads", folder_repository.list_folders(self.factory)[0])
+
+    def test_ai_thread_requires_existing_folder(self):
+        self.assertIsNone(folder_repository.create_ai_thread(
+            self.factory, "missing", "Title", "", "2026-01-01", "Conversation", "",
+        ))
+
+    def test_ai_threads_on_same_date_order_by_creation_time(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        with patch.object(folder_repository, "_now", side_effect=[
+            "2026-09-28T10:00:00+00:00", "2026-09-28T11:00:00+00:00",
+        ]):
+            first = folder_repository.create_ai_thread(
+                self.factory, folder["id"], "First", "", "2026-09-20", "First", "",
+            )
+            second = folder_repository.create_ai_thread(
+                self.factory, folder["id"], "Second", "", "2026-09-20", "Second", "",
+            )
+        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
+        self.assertEqual([thread["id"] for thread in saved], [second["id"], first["id"]])
 
     def test_create_document(self):
         folder = folder_repository.create_folder(self.factory, "ועד הבית")

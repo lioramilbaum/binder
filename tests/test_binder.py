@@ -206,6 +206,60 @@ class BinderDeleteTests(unittest.TestCase):
         self.assertEqual(handler._send_json.call_args.args[1], 404)
 
 
+class BinderAiThreadTests(unittest.TestCase):
+    def post(self, payload, folder_id="folder", folder_exists=True):
+        handler = object.__new__(Binder)
+        handler.path = f"/api/folders/{folder_id}/ai-threads"
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = Mock()
+        handler.store.create_ai_thread.return_value = {"id": "thread"} if folder_exists else None
+        handler._send_json = Mock()
+        handler.do_POST()
+        return handler
+
+    def test_creates_archived_thread(self):
+        payload = {
+            "title": "  Case review  ", "provider": "ChatGPT",
+            "conversation_date": "2026-09-28", "transcript": "User: hello\nAI: hi",
+            "summary": "Follow up",
+        }
+        handler = self.post(payload)
+        handler.store.create_ai_thread.assert_called_once_with(
+            "folder", "Case review", "ChatGPT", "2026-09-28",
+            "User: hello\nAI: hi", "Follow up",
+        )
+        self.assertEqual(handler._send_json.call_args.args[1], 201)
+
+    def test_rejects_invalid_threads_without_writing(self):
+        base = {"title": "Title", "conversation_date": "2026-09-28", "transcript": "Text"}
+        invalid = [
+            [], {}, {**base, "title": " "}, {**base, "transcript": " \n"},
+            {**base, "conversation_date": "2026-02-30"},
+            {**base, "conversation_date": "20260928"},
+            {**base, "title": 42}, {**base, "provider": None},
+            {**base, "summary": []}, {**base, "transcript": False},
+            {**base, "extra": "field"}, {**base, "title": "x" * 201},
+            {**base, "provider": "x" * 101},
+            {**base, "transcript": "x" * 200_001},
+            {**base, "summary": "x" * 10_001},
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload if len(str(payload)) < 100 else "large"):
+                handler = self.post(payload)
+                handler.store.create_ai_thread.assert_not_called()
+                self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_missing_folder_returns_404(self):
+        handler = self.post(
+            {"title": "Title", "conversation_date": "2026-09-28", "transcript": "Text"},
+            folder_exists=False,
+        )
+        handler.store.create_ai_thread.assert_called_once()
+        self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+
 class BinderCreateDocumentTests(unittest.TestCase):
     def post(self, path, payload):
         handler = object.__new__(Binder)

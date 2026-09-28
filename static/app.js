@@ -12,6 +12,11 @@ const documentSearch = document.querySelector("#document-search");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
+const aiThreadDialog = document.querySelector("#ai-thread-dialog");
+const aiThreadForm = document.querySelector("#ai-thread-form");
+const aiThreadFormError = document.querySelector("#ai-thread-form-error");
+const aiThreadsElement = document.querySelector("#ai-threads");
+const aiThreadsEmptyState = document.querySelector("#ai-threads-empty-state");
 let currentFolderId = null;
 let currentDocumentId = null;
 let currentDocuments = [];
@@ -386,6 +391,49 @@ function renderFolders(folders) {
   }
 }
 
+function renderAiThreads(threads) {
+  aiThreadsElement.replaceChildren();
+  aiThreadsEmptyState.hidden = threads.length !== 0;
+  for (const thread of threads) {
+    const card = document.createElement("details");
+    card.className = "document-item";
+    const heading = document.createElement("summary");
+    const headingText = document.createElement("span");
+    const title = document.createElement("h3");
+    title.textContent = thread.title;
+    title.dir = "auto";
+    const dateText = dateFormatter.format(new Date(`${thread.conversation_date}T00:00:00`));
+    const meta = document.createElement("span");
+    meta.textContent = thread.provider ? `${dateText} · ${thread.provider}` : dateText;
+    meta.dir = "auto";
+    headingText.append(title, meta);
+    const marker = document.createElement("span");
+    marker.className = "document-marker";
+    marker.textContent = "⌄";
+    heading.append(headingText, marker);
+
+    const body = document.createElement("div");
+    body.className = "document-body";
+    for (const [label, value] of [
+      [@@ai_thread_transcript@@, thread.transcript],
+      [@@ai_thread_summary@@, thread.summary],
+    ]) {
+      if (!value) continue;
+      const section = document.createElement("section");
+      section.className = "ai-thread-content";
+      const sectionHeading = document.createElement("h4");
+      sectionHeading.textContent = label;
+      const content = document.createElement("pre");
+      content.textContent = value;
+      content.dir = "auto";
+      section.append(sectionHeading, content);
+      body.append(section);
+    }
+    card.append(heading, body);
+    aiThreadsElement.append(card);
+  }
+}
+
 const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
 const documentDialogTitle = document.querySelector("#document-dialog-title");
 const documentSubmitButton = documentForm.querySelector('button[type="submit"]');
@@ -640,6 +688,7 @@ async function openFolder(folderId, updateHash = true) {
     folder.description || @@no_description@@;
   renderTagFilter();
   renderDocuments(currentDocuments);
+  renderAiThreads(folder.ai_threads || []);
   homeView.hidden = true;
   folderView.hidden = false;
   document.title = format(@@folder_title@@, { name: folder.name });
@@ -682,6 +731,13 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
 });
 document.querySelector("#close-document-dialog").addEventListener("click", () => documentDialog.close());
 document.querySelector("#cancel-document-dialog").addEventListener("click", () => documentDialog.close());
+document.querySelector("#new-ai-thread-button").addEventListener("click", () => {
+  aiThreadForm.reset();
+  aiThreadFormError.textContent = "";
+  aiThreadDialog.showModal();
+});
+document.querySelector("#close-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());
+document.querySelector("#cancel-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());
 
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
@@ -689,6 +745,41 @@ dialog.addEventListener("click", (event) => {
 
 documentDialog.addEventListener("click", (event) => {
   if (event.target === documentDialog) documentDialog.close();
+});
+aiThreadDialog.addEventListener("click", (event) => {
+  if (event.target === aiThreadDialog) aiThreadDialog.close();
+});
+
+aiThreadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  aiThreadFormError.textContent = "";
+  const data = new FormData(aiThreadForm);
+  const submitButton = aiThreadForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: data.get("title"),
+        provider: data.get("provider"),
+        conversation_date: data.get("conversation_date"),
+        transcript: data.get("transcript"),
+        summary: data.get("summary"),
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      aiThreadFormError.textContent = result.error || @@save_failed@@;
+      return;
+    }
+    aiThreadDialog.close();
+    await openFolder(currentFolderId, false);
+  } catch {
+    aiThreadFormError.textContent = @@connect_failed@@;
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 
 form.addEventListener("submit", async (event) => {

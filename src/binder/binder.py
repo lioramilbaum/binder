@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import date, time
 from email import policy
 from email.message import Message
@@ -111,12 +112,16 @@ class Binder(BaseHTTPRequestHandler):
         is_document_request = path.startswith("/api/folders/") and path.endswith(
             "/documents"
         )
-        if not is_folder_request and not is_document_request:
+        is_ai_thread_request = bool(re.fullmatch(r"/api/folders/[^/]+/ai-threads", path))
+        if not is_folder_request and not is_document_request and not is_ai_thread_request:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if is_ai_thread_request and (length <= 0 or length > 1_000_000):
+                self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+                return
             payload = json.loads(self.rfile.read(length))
         except (ValueError, json.JSONDecodeError):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
@@ -127,6 +132,9 @@ class Binder(BaseHTTPRequestHandler):
 
         if is_document_request:
             self._create_document(path, payload)
+            return
+        if is_ai_thread_request:
+            self._create_ai_thread(path, payload)
             return
 
         name = str(payload.get("name", "")).strip()
@@ -139,6 +147,45 @@ class Binder(BaseHTTPRequestHandler):
             return
 
         self._send_json(self.store.create(name, description), HTTPStatus.CREATED)
+
+    def _create_ai_thread(self, path: str, payload: dict[str, object]) -> None:
+        allowed = {"title", "provider", "conversation_date", "transcript", "summary"}
+        if set(payload) - allowed or any(
+            not isinstance(payload.get(key, ""), str) for key in allowed
+        ):
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        title = payload.get("title", "").strip()
+        provider = payload.get("provider", "").strip()
+        conversation_date = payload.get("conversation_date", "")
+        transcript = payload.get("transcript", "")
+        summary = payload.get("summary", "")
+        if not title or not transcript.strip() or not conversation_date:
+            self._send_json({"error": "יש להזין כותרת, תאריך ושיחה"}, HTTPStatus.BAD_REQUEST)
+            return
+        if (
+            len(title) > 200 or len(provider) > 100
+            or len(transcript) > 200_000 or len(summary) > 10_000
+        ):
+            self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", conversation_date):
+                raise ValueError
+            date.fromisoformat(conversation_date)
+        except ValueError:
+            self._send_json({"error": "התאריך אינו תקין"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        folder_id = path.removeprefix("/api/folders/").removesuffix("/ai-threads")
+        thread = self.store.create_ai_thread(
+            folder_id, title, provider, conversation_date, transcript, summary
+        )
+        if thread is None:
+            self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
+            return
+        self._send_json(thread, HTTPStatus.CREATED)
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path

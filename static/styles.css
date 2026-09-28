@@ -69,7 +69,8 @@ button { cursor: pointer; }
 .primary-button:disabled { cursor: wait; opacity: .65; }
 .secondary-button { color: var(--ink); border-color: var(--line); background: transparent; }
 
-.folders-section, .documents-section { padding-bottom: 80px; }
+.folders-section, .documents-section, .ai-threads-section { padding-bottom: 80px; }
+.documents-section { padding-bottom: 48px; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
 .section-heading h2 { margin: 0; font-size: 1.4rem; }
 .section-heading span { color: var(--muted); font-size: .9rem; }
@@ -114,6 +115,9 @@ button { cursor: pointer; }
 .document-description { color: var(--muted); }
 .document-summary { font-style: italic; }
 .document-body pre { margin: 16px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; }
+.ai-thread-content { margin-top: 18px; }
+.ai-thread-content h4 { margin: 0 0 6px; }
+.ai-thread-content pre { margin: 0; }
 .document-actions { display: flex; gap: 10px; margin-bottom: 16px; margin-top: 10px; }
 .edit-content-button { margin-top: 18px; min-height: 38px; }
 .content-input { min-height: 220px; }

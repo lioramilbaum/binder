@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from .database import session_scope
 from .large_objects import create_large_object, hash_stream, read_large_object
-from .models import Document, DocumentFile, Folder, Tag
+from .models import AiThread, Document, DocumentFile, Folder, Tag
 from .tags import normalize_tags, tag_key
 from .whatsapp import WhatsAppChat
 
@@ -107,6 +107,19 @@ def _document_sort_key(document: Document) -> tuple[str, str, str]:
     return (document.date or "", document.time or "", document.created_at or "")
 
 
+def _ai_thread_to_dict(thread: AiThread) -> dict[str, object]:
+    return {
+        "id": thread.id,
+        "folder_id": thread.folder_id,
+        "title": thread.title,
+        "provider": thread.provider,
+        "conversation_date": thread.conversation_date,
+        "transcript": thread.transcript,
+        "summary": thread.summary,
+        "created_at": thread.created_at,
+    }
+
+
 def list_folders(factory: sessionmaker[Session]) -> list[dict[str, object]]:
     """Return all folders, newest-updated first, with lightweight document summaries."""
 
@@ -144,6 +157,7 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
                 selectinload(Folder.documents)
                 .selectinload(Document.tags)
             )
+            .options(selectinload(Folder.ai_threads))
             .filter(Folder.id == folder_id)
             .one_or_none()
         )
@@ -157,6 +171,14 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
             "created_at": folder.created_at,
             "updated_at": folder.updated_at,
             "documents": [_document_to_dict(document) for document in documents],
+            "ai_threads": [
+                _ai_thread_to_dict(thread)
+                for thread in sorted(
+                    folder.ai_threads,
+                    key=lambda thread: (thread.conversation_date, thread.created_at, thread.id),
+                    reverse=True,
+                )
+            ],
         }
 
 
@@ -182,7 +204,40 @@ def create_folder(
         "created_at": folder.created_at,
         "updated_at": folder.updated_at,
         "documents": [],
+        "ai_threads": [],
     }
+
+
+def create_ai_thread(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    title: str,
+    provider: str,
+    conversation_date: str,
+    transcript: str,
+    summary: str,
+) -> dict[str, object] | None:
+    """Save an archived conversation, or return None for an absent folder."""
+
+    with session_scope(factory) as session:
+        folder = session.get(Folder, folder_id)
+        if folder is None:
+            return None
+        now = _now()
+        thread = AiThread(
+            id=str(uuid4()),
+            folder_id=folder_id,
+            title=title,
+            provider=provider,
+            conversation_date=conversation_date,
+            transcript=transcript,
+            summary=summary,
+            created_at=now,
+        )
+        session.add(thread)
+        folder.updated_at = now
+        session.flush()
+        return _ai_thread_to_dict(thread)
 
 
 def create_document(

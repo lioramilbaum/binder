@@ -27,6 +27,19 @@ class Folders:
     def create(self, name: str, description: str = "") -> dict[str, object]:
         return folder_repository.create_folder(self.factory, name, description)
 
+    def create_ai_thread(
+        self,
+        folder_id: str,
+        title: str,
+        provider: str,
+        conversation_date: str,
+        transcript: str,
+        summary: str,
+    ) -> Optional[dict[str, object]]:
+        return folder_repository.create_ai_thread(
+            self.factory, folder_id, title, provider, conversation_date, transcript, summary
+        )
+
     def create_document(
         self,
         folder_id: str,

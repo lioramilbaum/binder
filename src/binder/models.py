@@ -32,6 +32,26 @@ class Folder(Base):
     documents: Mapped[list["Document"]] = relationship(
         back_populates="folder", cascade="all, delete-orphan"
     )
+    ai_threads: Mapped[list["AiThread"]] = relationship(
+        back_populates="folder", cascade="all, delete-orphan"
+    )
+
+
+class AiThread(Base):
+    """A manually archived, historical AI conversation."""
+
+    __tablename__ = "ai_threads"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    conversation_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    transcript: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    folder: Mapped[Folder] = relationship(back_populates="ai_threads")
 
 
 class Document(Base):

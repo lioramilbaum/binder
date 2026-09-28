@@ -53,6 +53,15 @@ when attached to a document. Binder preserves the original export and renders
 the parsed messages as a chat conversation. Android and iPhone export formats
 can vary by locale, so the original file remains the authoritative source.
 
+## AI Thread Archive
+
+Each folder has a manual archive for historic AI conversations. Open a folder,
+choose **Add AI thread**, then enter a title, conversation date, and the full
+conversation text. The AI service and your own summary are optional. Saved
+threads appear newest first in expandable cards. Binder stores the text in its
+PostgreSQL database and does not connect to an AI service for this feature.
+Archived threads cannot be edited or deleted through the interface.
+
 ### Importing data from the old file-based storage
 
 Earlier versions of Binder stored folders in `data/folders.json` and documents
