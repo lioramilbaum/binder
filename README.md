@@ -53,34 +53,47 @@ when attached to a document. Binder preserves the original export and renders
 the parsed messages as a chat conversation. Android and iPhone export formats
 can vary by locale, so the original file remains the authoritative source.
 
-## AI Thread Archive
+## AI Conversations
 
-Each folder has an archive for historic AI conversations. To add one manually,
-choose **Add AI thread**, then enter a title, conversation date, and the full
-conversation text. The conversation time, AI service, and your own summary are optional.
+To record an AI conversation, choose **+ New document**, then set **Document type** to
+**AI conversation**. Fill in:
 
-To import a public ChatGPT conversation, use ChatGPT's **Share** action and copy
-the `https://chatgpt.com/share/<id>` link. In Binder, choose **Import ChatGPT
-share link**, paste it, and preview the complete extracted text. Check the title,
-message count, transcript, and omission warning before saving. When the first
-visible message has a usable timestamp, Binder suggests its date and time in
-your local timezone; you can edit both. Otherwise, enter a date yourself and
-optionally a time. Binder saves the exact previewed transcript, link, import
-time, the first visible message's source UTC timestamp when available, and the
-SHA-256 hash of the saved UTF-8 text. Saved threads appear newest first in
-expandable cards. No AI API key
-or paid service is needed for this import. Archived threads cannot be edited or
-deleted through the interface.
+- **Conversation title**: the subject or purpose of the conversation
+- **Date**: when the conversation took place
+- **Time** (optional): the hour and minute, if you remember it
+- **AI service** (optional): e.g. "ChatGPT", "Claude", "Gemini"
+- **Full conversation transcript**: paste or type the complete conversation text
+- **Summary** (optional): up to 10,000 characters for your own notes or insights
 
-A share link exposes a snapshot to anyone with the link; avoid sharing a
-conversation containing sensitive evidence unless you are comfortable with that
-access. Binder fetches the public page during preview and stores the extracted
-text locally in PostgreSQL. Images, attachments, and other non-text content are
-not imported; hidden, tool-directed, and internal messages are excluded. Import
-also depends on ChatGPT's undocumented share-page format,
-which can change. If the link is inaccessible or the format is unsupported, use
+AI documents support tags and full-text search just like regular documents. You can edit
+the title, date, time, summary, and tags after creation. The transcript of manually-entered
+conversations can also be edited.
+
+To import a public ChatGPT conversation, use ChatGPT's **Share** action and copy the
+`https://chatgpt.com/share/<id>` link. In Binder, choose **Import ChatGPT share link** in
+the Documents section, paste it, and preview the complete extracted text. Verify the title,
+message count, transcript, and any omission warnings before saving. When the first visible
+message has a usable timestamp, Binder suggests its date and time in your local timezone;
+you can edit both. Otherwise, enter a date yourself and optionally a time. Binder saves the
+exact previewed transcript, link, import time, the first visible message's source UTC
+timestamp when available, and the SHA-256 hash of the saved UTF-8 text.
+
+For imported conversations, the transcript cannot be edited (to preserve the import integrity),
+but you can change the title, date, time, summary, and tags. No AI API key or paid service
+is needed for this import.
+
+A share link exposes a snapshot to anyone with the link; avoid sharing a conversation
+containing sensitive evidence unless you are comfortable with that access. Binder fetches
+the public page during preview and stores the extracted text locally in PostgreSQL. Images,
+attachments, and other non-text content are not imported; hidden, tool-directed, and
+internal messages are excluded. Import also depends on ChatGPT's undocumented share-page
+format, which can change. If the link is inaccessible or the format is unsupported, use
 manual entry. See [OpenAI's shared links guidance](https://help.openai.com/en/articles/7925741-chatgpt-shared-links-faq)
 for how sharing works and how to manage shared links.
+
+If you have existing archived AI threads in an older Binder database, migration
+`20260930_08` automatically moves them into documents with the new AI type. Before running
+this migration, use `make backup` to save your current database.
 
 ### Importing data from the old file-based storage
 

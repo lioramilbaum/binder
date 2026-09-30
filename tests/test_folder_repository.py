@@ -1,7 +1,11 @@
+import importlib.util
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
@@ -49,50 +53,59 @@ class FolderRepositoryTests(unittest.TestCase):
     def test_ai_threads_persist_in_folder_and_order_by_conversation_date(self):
         folder = folder_repository.create_folder(self.factory, "Case")
         other = folder_repository.create_folder(self.factory, "Other")
-        older = folder_repository.create_ai_thread(
-            self.factory, folder["id"], "Older", "Claude", "2026-01-01",
-            "User: first\nAI: answer", "My note",
+        older = folder_repository.create_document(
+            self.factory, folder["id"], "2026-01-01", "Older",
+            description="", content="User: first\nAI: answer", time="",
+            summary="My note", document_type="ai", provider="Claude"
         )
-        newer = folder_repository.create_ai_thread(
-            self.factory, folder["id"], "Newer", "ChatGPT", "2026-02-01",
-            "Full transcript", "",
+        newer = folder_repository.create_document(
+            self.factory, folder["id"], "2026-02-01", "Newer",
+            description="", content="Full transcript", time="",
+            summary="", document_type="ai", provider="ChatGPT"
         )
-        folder_repository.create_ai_thread(
-            self.factory, other["id"], "Private", "", "2026-03-01", "Elsewhere", "",
+        folder_repository.create_document(
+            self.factory, other["id"], "2026-03-01", "Private",
+            description="", content="Elsewhere", time="",
+            summary="", document_type="ai", provider=""
         )
 
-        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
-        self.assertEqual([thread["id"] for thread in saved], [newer["id"], older["id"]])
-        self.assertEqual(saved[1]["transcript"], "User: first\nAI: answer")
-        self.assertEqual(saved[1]["summary"], "My note")
-        self.assertIsNone(saved[1]["source_url"])
-        self.assertIsNone(saved[1]["imported_at"])
-        self.assertIsNone(saved[1]["transcript_sha256"])
-        self.assertIsNone(saved[1]["conversation_time"])
-        self.assertIsNone(saved[1]["source_first_message_at"])
-        self.assertEqual(len(folder_repository.get_folder(self.factory, other["id"])["ai_threads"]), 1)
-        self.assertNotIn("ai_threads", folder_repository.list_folders(self.factory)[0])
+        saved = folder_repository.get_folder(self.factory, folder["id"])["documents"]
+        # Filter to AI documents only
+        ai_docs = [d for d in saved if d.get("type") == "ai"]
+        self.assertEqual([doc["id"] for doc in ai_docs], [newer["id"], older["id"]])
+        self.assertEqual(ai_docs[1]["content"], "User: first\nAI: answer")
+        self.assertEqual(ai_docs[1]["summary"], "My note")
+        self.assertIsNone(ai_docs[1].get("source_url"))
+        self.assertIsNone(ai_docs[1].get("imported_at"))
+        self.assertIsNone(ai_docs[1].get("transcript_sha256"))
+        self.assertEqual(ai_docs[1]["time"], "")
+        self.assertIsNone(ai_docs[1].get("source_first_message_at"))
+        other_docs = folder_repository.get_folder(self.factory, other["id"])["documents"]
+        self.assertEqual(len(other_docs), 1)
 
     def test_import_source_metadata_is_folder_scoped(self):
         folder = folder_repository.create_folder(self.factory, "Case")
         other = folder_repository.create_folder(self.factory, "Other")
-        imported = folder_repository.create_ai_thread(
-            self.factory, folder["id"], "Shared", "ChatGPT", "2026-09-28", "Exact text", "",
+        imported = folder_repository.create_document(
+            self.factory, folder["id"], "2026-09-28", "Shared",
+            description="", content="Exact text", time="14:35",
+            summary="", document_type="ai", provider="ChatGPT",
             source_url="https://chatgpt.com/share/12345678-1234-4234-8234-123456789abc",
             transcript_sha256="a" * 64,
-            conversation_time="14:35",
             source_first_message_at="2023-11-14T22:13:20.250000+00:00",
         )
-        self.assertEqual(imported["transcript_sha256"], "a" * 64)
-        self.assertEqual(imported["conversation_time"], "14:35")
-        self.assertEqual(imported["source_first_message_at"], "2023-11-14T22:13:20.250000+00:00")
-        self.assertIsNotNone(imported["imported_at"])
-        self.assertEqual(folder_repository.get_folder(self.factory, folder["id"])["ai_threads"][0], imported)
-        self.assertEqual(folder_repository.get_folder(self.factory, other["id"])["ai_threads"], [])
+        self.assertEqual(imported.get("transcript_sha256"), "a" * 64)
+        self.assertEqual(imported["time"], "14:35")
+        self.assertEqual(imported.get("source_first_message_at"), "2023-11-14T22:13:20.250000+00:00")
+        self.assertIsNotNone(imported.get("imported_at"))
+        other_docs = folder_repository.get_folder(self.factory, other["id"])["documents"]
+        self.assertEqual(len(other_docs), 0)
 
     def test_ai_thread_requires_existing_folder(self):
-        self.assertIsNone(folder_repository.create_ai_thread(
-            self.factory, "missing", "Title", "", "2026-01-01", "Conversation", "",
+        self.assertIsNone(folder_repository.create_document(
+            self.factory, "missing", "2026-01-01", "Title",
+            description="", content="Conversation", time="",
+            summary="", document_type="ai", provider=""
         ))
 
     def test_ai_threads_on_same_date_order_by_creation_time(self):
@@ -100,14 +113,19 @@ class FolderRepositoryTests(unittest.TestCase):
         with patch.object(folder_repository, "_now", side_effect=[
             "2026-09-28T10:00:00+00:00", "2026-09-28T11:00:00+00:00",
         ]):
-            first = folder_repository.create_ai_thread(
-                self.factory, folder["id"], "First", "", "2026-09-20", "First", "",
+            first = folder_repository.create_document(
+                self.factory, folder["id"], "2026-09-20", "First",
+                description="", content="First", time="",
+                summary="", document_type="ai", provider=""
             )
-            second = folder_repository.create_ai_thread(
-                self.factory, folder["id"], "Second", "", "2026-09-20", "Second", "",
+            second = folder_repository.create_document(
+                self.factory, folder["id"], "2026-09-20", "Second",
+                description="", content="Second", time="",
+                summary="", document_type="ai", provider=""
             )
-        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
-        self.assertEqual([thread["id"] for thread in saved], [second["id"], first["id"]])
+        saved = folder_repository.get_folder(self.factory, folder["id"])["documents"]
+        ai_docs = [d for d in saved if d.get("type") == "ai"]
+        self.assertEqual([doc["id"] for doc in ai_docs], [second["id"], first["id"]])
 
     def test_ai_threads_on_same_date_order_by_time_then_creation(self):
         folder = folder_repository.create_folder(self.factory, "Case")
@@ -115,19 +133,24 @@ class FolderRepositoryTests(unittest.TestCase):
             "2026-09-28T13:00:00+00:00", "2026-09-28T12:00:00+00:00",
             "2026-09-28T14:00:00+00:00",
         ]):
-            early = folder_repository.create_ai_thread(
-                self.factory, folder["id"], "Early", "", "2026-09-20", "First", "",
-                conversation_time="09:00",
+            early = folder_repository.create_document(
+                self.factory, folder["id"], "2026-09-20", "Early",
+                description="", content="First", time="09:00",
+                summary="", document_type="ai", provider=""
             )
-            late = folder_repository.create_ai_thread(
-                self.factory, folder["id"], "Late", "", "2026-09-20", "Second", "",
-                conversation_time="14:00",
+            late = folder_repository.create_document(
+                self.factory, folder["id"], "2026-09-20", "Late",
+                description="", content="Second", time="14:00",
+                summary="", document_type="ai", provider=""
             )
-            unknown = folder_repository.create_ai_thread(
-                self.factory, folder["id"], "Unknown", "", "2026-09-20", "Third", "",
+            unknown = folder_repository.create_document(
+                self.factory, folder["id"], "2026-09-20", "Unknown",
+                description="", content="Third", time="",
+                summary="", document_type="ai", provider=""
             )
-        saved = folder_repository.get_folder(self.factory, folder["id"])["ai_threads"]
-        self.assertEqual([thread["id"] for thread in saved], [late["id"], early["id"], unknown["id"]])
+        saved = folder_repository.get_folder(self.factory, folder["id"])["documents"]
+        ai_docs = [d for d in saved if d.get("type") == "ai"]
+        self.assertEqual([doc["id"] for doc in ai_docs], [late["id"], early["id"], unknown["id"]])
 
     def test_create_document(self):
         folder = folder_repository.create_folder(self.factory, "ועד הבית")
@@ -317,6 +340,105 @@ class FolderRepositoryTests(unittest.TestCase):
         doc = folders[0]["documents"][0]
 
         self.assertEqual(doc["tags"], ["Important"])
+
+
+class DocumentTypeMigrationTests(unittest.TestCase):
+    """Tests for the ai_threads to documents migration."""
+
+    def test_migration_moves_ai_threads_to_documents_with_type(self):
+        path = Path(__file__).resolve().parents[1] / "migrations/versions/20260930_08_unify_ai_threads_into_documents.py"
+        spec = importlib.util.spec_from_file_location("doc_type_migration", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            # Create schema at revision 07 (before migration)
+            connection.execute(text("CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"))
+            connection.execute(text("CREATE TABLE documents (id TEXT PRIMARY KEY, folder_id TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, content TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, whatsapp_chat TEXT, whatsapp_chat_file_id TEXT, FOREIGN KEY (folder_id) REFERENCES folders(id))"))
+            connection.execute(text("CREATE TABLE ai_threads (id TEXT PRIMARY KEY, folder_id TEXT NOT NULL, title TEXT NOT NULL, provider TEXT NOT NULL, conversation_date TEXT NOT NULL, conversation_time TEXT, transcript TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, source_url TEXT, imported_at TEXT, transcript_sha256 TEXT, source_first_message_at TEXT, FOREIGN KEY (folder_id) REFERENCES folders(id))"))
+            # Create indexes for ai_threads
+            connection.execute(text("CREATE INDEX ix_ai_threads_folder_id ON ai_threads (folder_id)"))
+            connection.execute(text("CREATE INDEX ix_ai_threads_conversation_date ON ai_threads (conversation_date)"))
+            connection.execute(text("CREATE INDEX ix_ai_threads_folder_chronology ON ai_threads (folder_id, conversation_date, created_at)"))
+
+            # Insert test data
+            connection.execute(text("INSERT INTO folders (id, name, description, created_at, updated_at) VALUES ('f1', 'Test', '', '2026-09-30T00:00:00+00:00', '2026-09-30T00:00:00+00:00')"))
+            connection.execute(text("INSERT INTO documents (id, folder_id, date, time, name, description, content, summary, created_at, updated_at) VALUES ('d1', 'f1', '2026-09-30', '', 'Regular', '', 'Content', '', '2026-09-30T00:00:00+00:00', '2026-09-30T00:00:00+00:00')"))
+            connection.execute(text("INSERT INTO ai_threads (id, folder_id, title, provider, conversation_date, conversation_time, transcript, summary, created_at, source_url, imported_at, transcript_sha256, source_first_message_at) VALUES ('a1', 'f1', 'AI Thread', 'ChatGPT', '2026-09-28', '14:35', 'Chat transcript', 'Summary', '2026-09-28T00:00:00+00:00', 'https://chatgpt.com/share/abc', '2026-09-30T01:00:00+00:00', 'abc123', '2023-11-14T22:13:20.250000+00:00')"))
+
+            # Run migration
+            operations = Operations(MigrationContext.configure(connection))
+            with patch.object(migration, "op", operations):
+                migration.upgrade()
+
+            # Verify regular document still has type='regular'
+            regular = connection.execute(text("SELECT type, name, provider FROM documents WHERE id = 'd1'")).one()
+            self.assertEqual(regular[0], "regular")
+            self.assertEqual(regular[1], "Regular")
+            self.assertEqual(regular[2], "")
+
+            # Verify ai_thread moved as type='ai' document
+            ai_doc = connection.execute(text("SELECT type, name, date, time, content, summary, provider, source_url, transcript_sha256, source_first_message_at FROM documents WHERE id = 'a1'")).one()
+            self.assertEqual(ai_doc[0], "ai")
+            self.assertEqual(ai_doc[1], "AI Thread")
+            self.assertEqual(ai_doc[2], "2026-09-28")
+            self.assertEqual(ai_doc[3], "14:35")
+            self.assertEqual(ai_doc[4], "Chat transcript")
+            self.assertEqual(ai_doc[5], "Summary")
+            self.assertEqual(ai_doc[6], "ChatGPT")
+            self.assertEqual(ai_doc[7], "https://chatgpt.com/share/abc")
+            self.assertEqual(ai_doc[8], "abc123")
+            self.assertEqual(ai_doc[9], "2023-11-14T22:13:20.250000+00:00")
+
+            # Verify ai_threads table is gone
+            with self.assertRaises(Exception):  # Table doesn't exist
+                connection.execute(text("SELECT COUNT(*) FROM ai_threads"))
+
+    def test_migration_downgrade_restores_ai_threads(self):
+        path = Path(__file__).resolve().parents[1] / "migrations/versions/20260930_08_unify_ai_threads_into_documents.py"
+        spec = importlib.util.spec_from_file_location("doc_type_migration", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            # Create schema at revision 07
+            connection.execute(text("CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"))
+            connection.execute(text("CREATE TABLE documents (id TEXT PRIMARY KEY, folder_id TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL, content TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, whatsapp_chat TEXT, whatsapp_chat_file_id TEXT, FOREIGN KEY (folder_id) REFERENCES folders(id))"))
+            connection.execute(text("CREATE TABLE ai_threads (id TEXT PRIMARY KEY, folder_id TEXT NOT NULL, title TEXT NOT NULL, provider TEXT NOT NULL, conversation_date TEXT NOT NULL, conversation_time TEXT, transcript TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, source_url TEXT, imported_at TEXT, transcript_sha256 TEXT, source_first_message_at TEXT, FOREIGN KEY (folder_id) REFERENCES folders(id))"))
+            connection.execute(text("CREATE TABLE document_files (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, name TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, data_oid INTEGER, sha256 TEXT, created_at TEXT NOT NULL, FOREIGN KEY (document_id) REFERENCES documents(id))"))
+            # Create indexes for ai_threads
+            connection.execute(text("CREATE INDEX ix_ai_threads_folder_id ON ai_threads (folder_id)"))
+            connection.execute(text("CREATE INDEX ix_ai_threads_conversation_date ON ai_threads (conversation_date)"))
+            connection.execute(text("CREATE INDEX ix_ai_threads_folder_chronology ON ai_threads (folder_id, conversation_date, created_at)"))
+
+            # Insert test data
+            connection.execute(text("INSERT INTO folders (id, name, description, created_at, updated_at) VALUES ('f1', 'Test', '', '2026-09-30T00:00:00+00:00', '2026-09-30T00:00:00+00:00')"))
+            connection.execute(text("INSERT INTO ai_threads (id, folder_id, title, provider, conversation_date, conversation_time, transcript, summary, created_at, source_url, imported_at, transcript_sha256, source_first_message_at) VALUES ('a1', 'f1', 'AI Thread', 'ChatGPT', '2026-09-28', '14:35', 'Chat transcript', 'Summary', '2026-09-28T00:00:00+00:00', 'https://chatgpt.com/share/abc', '2026-09-30T01:00:00+00:00', 'abc123', '2023-11-14T22:13:20.250000+00:00')"))
+
+            # Run upgrade
+            operations = Operations(MigrationContext.configure(connection))
+            with patch.object(migration, "op", operations):
+                migration.upgrade()
+
+            # Run downgrade
+            with patch.object(migration, "op", operations):
+                migration.downgrade()
+
+            # Verify ai_thread is restored
+            ai_thread = connection.execute(text("SELECT title, provider, conversation_date, conversation_time, transcript, summary, source_url, transcript_sha256, source_first_message_at FROM ai_threads WHERE id = 'a1'")).one()
+            self.assertEqual(ai_thread[0], "AI Thread")
+            self.assertEqual(ai_thread[1], "ChatGPT")
+            self.assertEqual(ai_thread[2], "2026-09-28")
+            self.assertEqual(ai_thread[3], "14:35")
+            self.assertEqual(ai_thread[4], "Chat transcript")
+            self.assertEqual(ai_thread[5], "Summary")
+            self.assertEqual(ai_thread[6], "https://chatgpt.com/share/abc")
+            self.assertEqual(ai_thread[7], "abc123")
+            self.assertEqual(ai_thread[8], "2023-11-14T22:13:20.250000+00:00")
+
+            # Verify ai_thread is removed from documents
+            count = connection.execute(text("SELECT COUNT(*) FROM documents WHERE id = 'a1'")).scalar()
+            self.assertEqual(count, 0)
 
 
 _TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")

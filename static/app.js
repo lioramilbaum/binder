@@ -12,12 +12,8 @@ const documentSearch = document.querySelector("#document-search");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
-const aiThreadDialog = document.querySelector("#ai-thread-dialog");
-const aiThreadForm = document.querySelector("#ai-thread-form");
-const aiThreadFormError = document.querySelector("#ai-thread-form-error");
-const aiThreadsElement = document.querySelector("#ai-threads");
-const aiThreadsEmptyState = document.querySelector("#ai-threads-empty-state");
 const aiShareDialog = document.querySelector("#ai-share-dialog");
+const documentTypeSelect = document.querySelector("#document-type");
 const aiShareForm = document.querySelector("#ai-share-form");
 const aiShareConfirmForm = document.querySelector("#ai-share-confirm-form");
 const aiShareError = document.querySelector("#ai-share-error");
@@ -238,6 +234,21 @@ function applyDocumentFilters() {
   renderDocuments(filtered);
 }
 
+function applyDocumentType(type) {
+  for (const fieldset of document.querySelectorAll("[data-document-type]")) {
+    fieldset.hidden = fieldset.dataset.documentType !== type;
+    fieldset.disabled = fieldset.dataset.documentType !== type;
+  }
+  for (const element of document.querySelectorAll("[data-for-type]")) {
+    element.hidden = element.dataset.forType !== type;
+  }
+  // Update summary maxlength based on type
+  const summaryInput = document.querySelector("#document-summary");
+  if (summaryInput) {
+    summaryInput.maxLength = type === "ai" ? 10000 : 1000;
+  }
+}
+
 async function uploadFiles(documentId, files) {
   if (!files.length) return;
   const uploadData = new FormData();
@@ -420,68 +431,6 @@ function renderFolders(folders) {
   }
 }
 
-function renderAiThreads(threads) {
-  aiThreadsElement.replaceChildren();
-  aiThreadsEmptyState.hidden = threads.length !== 0;
-  for (const thread of threads) {
-    const card = document.createElement("details");
-    card.className = "document-item";
-    const heading = document.createElement("summary");
-    const headingText = document.createElement("span");
-    const title = document.createElement("h3");
-    title.textContent = thread.title;
-    title.dir = "auto";
-    const dateText = dateFormatter.format(new Date(`${thread.conversation_date}T00:00:00`));
-    const meta = document.createElement("span");
-    meta.textContent = [dateText, thread.conversation_time, thread.provider].filter(Boolean).join(" · ");
-    meta.dir = "auto";
-    headingText.append(title, meta);
-    const marker = document.createElement("span");
-    marker.className = "document-marker";
-    marker.textContent = "⌄";
-    heading.append(headingText, marker);
-
-    const body = document.createElement("div");
-    body.className = "document-body";
-    for (const [label, value] of [
-      [@@ai_thread_transcript@@, thread.transcript],
-      [@@ai_thread_summary@@, thread.summary],
-    ]) {
-      if (!value) continue;
-      const section = document.createElement("section");
-      section.className = "ai-thread-content";
-      const sectionHeading = document.createElement("h4");
-      sectionHeading.textContent = label;
-      const content = document.createElement("pre");
-      content.textContent = value;
-      content.dir = "auto";
-      section.append(sectionHeading, content);
-      body.append(section);
-    }
-    if (thread.source_url) {
-      const source = document.createElement("p");
-      source.className = "ai-thread-source";
-      const sourceLabel = document.createElement("span");
-      sourceLabel.textContent = `${@@share_source@@} `;
-      const link = document.createElement("a");
-      link.href = thread.source_url;
-      link.textContent = thread.source_url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      source.append(sourceLabel, link);
-      body.append(source);
-    }
-    if (thread.transcript_sha256) {
-      const hash = document.createElement("p");
-      hash.className = "ai-thread-source";
-      hash.textContent = format(@@share_hash@@, { hash: thread.transcript_sha256 });
-      body.append(hash);
-    }
-    card.append(heading, body);
-    aiThreadsElement.append(card);
-  }
-}
-
 const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
 const documentDialogTitle = document.querySelector("#document-dialog-title");
 const documentSubmitButton = documentForm.querySelector('button[type="submit"]');
@@ -507,11 +456,24 @@ function renderDocuments(documents) {
     const title = document.createElement("h3");
     title.textContent = documentItem.name;
     title.dir = "auto";
+
+    // Add AI badge for AI documents
+    if (documentItem.type === "ai") {
+      const badge = document.createElement("span");
+      badge.className = "document-type-badge";
+      badge.textContent = @@document_type_ai@@;
+      title.append(" ", badge);
+    }
+
     const documentDate = document.createElement("span");
     const formattedDate = dateFormatter.format(new Date(`${documentItem.date}T00:00:00`));
-    documentDate.textContent = documentItem.time
+    let dateText = documentItem.time
       ? `${formattedDate}, ${documentItem.time}`
       : formattedDate;
+    if (documentItem.type === "ai" && documentItem.provider) {
+      dateText += ` · ${documentItem.provider}`;
+    }
+    documentDate.textContent = dateText;
     summaryText.append(title, documentDate);
     if (documentItem.tags?.length) {
       const tagsContainer = document.createElement("span");
@@ -544,11 +506,32 @@ function renderDocuments(documents) {
       documentDialogTitle.textContent = @@edit_document_title@@;
       documentSubmitButton.textContent = @@save_changes@@;
 
+      const docType = documentItem.type || "regular";
+      documentTypeSelect.value = docType;
+      documentTypeSelect.disabled = true;  // Type is immutable after creation
+      applyDocumentType(docType);
+
       document.querySelector("#document-date").value = documentItem.date;
       document.querySelector("#document-time").value = documentItem.time || "";
       document.querySelector("#document-name").value = documentItem.name;
-      document.querySelector("#document-description").value = documentItem.description || "";
-      document.querySelector("#document-content").value = documentItem.content || "";
+
+      if (docType === "regular") {
+        document.querySelector("#document-description").value = documentItem.description || "";
+        document.querySelector("#document-content").value = documentItem.content || "";
+      } else {
+        // AI document
+        document.querySelector("#document-provider").value = documentItem.provider || "";
+        document.querySelector("#document-transcript").value = documentItem.content || "";
+        // Show locked hint if imported
+        const lockedHint = document.querySelector("#imported-transcript-locked-hint");
+        if (lockedHint) {
+          lockedHint.hidden = !documentItem.source_url;
+          if (documentItem.source_url) {
+            document.querySelector("#document-transcript").disabled = true;
+          }
+        }
+      }
+
       document.querySelector("#document-summary").value = documentItem.summary || "";
       documentTags = [...(documentItem.tags || [])];
       renderTagEditor();
@@ -597,6 +580,41 @@ function renderDocuments(documents) {
       thoughtsSummary.textContent = documentItem.summary;
       body.append(thoughtsSummary);
     }
+
+    // AI-specific fields
+    if (documentItem.type === "ai") {
+      if (documentItem.content) {
+        const transcriptSection = document.createElement("section");
+        transcriptSection.className = "ai-thread-content";
+        const transcriptHeading = document.createElement("h4");
+        transcriptHeading.textContent = @@ai_thread_transcript@@;
+        const transcriptContent = document.createElement("pre");
+        transcriptContent.textContent = documentItem.content;
+        transcriptContent.dir = "auto";
+        transcriptSection.append(transcriptHeading, transcriptContent);
+        body.append(transcriptSection);
+      }
+      if (documentItem.source_url) {
+        const source = document.createElement("p");
+        source.className = "ai-thread-source";
+        const sourceLabel = document.createElement("span");
+        sourceLabel.textContent = `${@@share_source@@} `;
+        const link = document.createElement("a");
+        link.href = documentItem.source_url;
+        link.textContent = documentItem.source_url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        source.append(sourceLabel, link);
+        body.append(source);
+      }
+      if (documentItem.transcript_sha256) {
+        const hash = document.createElement("p");
+        hash.className = "ai-thread-source";
+        hash.textContent = format(@@share_hash@@, { hash: documentItem.transcript_sha256 });
+        body.append(hash);
+      }
+    }
+
     if (documentItem.files?.length) {
       const files = document.createElement("div");
       files.className = "attachment-grid";
@@ -736,7 +754,6 @@ async function openFolder(folderId, updateHash = true) {
     folder.description || @@no_description@@;
   renderTagFilter();
   renderDocuments(currentDocuments);
-  renderAiThreads(folder.ai_threads || []);
   homeView.hidden = true;
   folderView.hidden = false;
   document.title = format(@@folder_title@@, { name: folder.name });
@@ -775,15 +792,13 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
   renderTagEditor();
   loadTagSuggestions();
   document.querySelector("#document-date").value = new Date().toISOString().slice(0, 10);
+  documentTypeSelect.value = "regular";
+  documentTypeSelect.disabled = false;
+  applyDocumentType("regular");
   documentDialog.showModal();
 });
 document.querySelector("#close-document-dialog").addEventListener("click", () => documentDialog.close());
 document.querySelector("#cancel-document-dialog").addEventListener("click", () => documentDialog.close());
-document.querySelector("#new-ai-thread-button").addEventListener("click", () => {
-  aiThreadForm.reset();
-  aiThreadFormError.textContent = "";
-  aiThreadDialog.showModal();
-});
 document.querySelector("#import-ai-thread-button").addEventListener("click", () => {
   aiShareForm.reset();
   aiShareConfirmForm.reset();
@@ -811,7 +826,7 @@ aiShareForm.addEventListener("submit", async (event) => {
   const button = document.querySelector("#ai-share-preview-button");
   button.disabled = true;
   try {
-    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads/share-preview`, {
+    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/documents/share-preview`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url: (() => { const u = document.querySelector("#ai-share-url").value.trim(); return u.startsWith("https://") ? u : `https://${u}`; })() }),
@@ -847,7 +862,7 @@ aiShareConfirmForm.addEventListener("submit", async (event) => {
   const button = aiShareConfirmForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
-    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads/share-confirm`, {
+    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/documents/share-confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -879,42 +894,6 @@ dialog.addEventListener("click", (event) => {
 
 documentDialog.addEventListener("click", (event) => {
   if (event.target === documentDialog) documentDialog.close();
-});
-aiThreadDialog.addEventListener("click", (event) => {
-  if (event.target === aiThreadDialog) aiThreadDialog.close();
-});
-
-aiThreadForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  aiThreadFormError.textContent = "";
-  const data = new FormData(aiThreadForm);
-  const submitButton = aiThreadForm.querySelector('button[type="submit"]');
-  submitButton.disabled = true;
-  try {
-    const response = await fetch(`/api/folders/${encodeURIComponent(currentFolderId)}/ai-threads`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: data.get("title"),
-        provider: data.get("provider"),
-        conversation_date: data.get("conversation_date"),
-        conversation_time: data.get("conversation_time"),
-        transcript: data.get("transcript"),
-        summary: data.get("summary"),
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      aiThreadFormError.textContent = result.error || @@save_failed@@;
-      return;
-    }
-    aiThreadDialog.close();
-    await openFolder(currentFolderId, false);
-  } catch {
-    aiThreadFormError.textContent = @@connect_failed@@;
-  } finally {
-    submitButton.disabled = false;
-  }
 });
 
 form.addEventListener("submit", async (event) => {
@@ -952,18 +931,33 @@ documentForm.addEventListener("submit", async (event) => {
       : `/api/folders/${encodeURIComponent(currentFolderId)}/documents`;
     const method = isEdit ? "PATCH" : "POST";
 
+    const documentType = documentTypeSelect.value || "regular";
+    const payload = {
+      date: data.get("date"),
+      time: data.get("time"),
+      name: data.get("name"),
+      summary: data.get("summary"),
+      tags: documentTags,
+    };
+
+    // Include type on POST only (immutable after creation)
+    if (!isEdit) {
+      payload.type = documentType;
+    }
+
+    if (documentType === "regular") {
+      payload.description = data.get("description");
+      payload.content = data.get("content");
+    } else {
+      // AI document
+      payload.provider = data.get("provider");
+      payload.content = data.get("content");  // Use content for transcript
+    }
+
     const response = await fetch(url, {
       method: method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: data.get("date"),
-        time: data.get("time"),
-        name: data.get("name"),
-        description: data.get("description"),
-        content: data.get("content"),
-        summary: data.get("summary"),
-        tags: documentTags,
-      }),
+      body: JSON.stringify(payload),
     });
     const contentType = response.headers.get("Content-Type") || "";
     const result = contentType.includes("application/json")
@@ -974,7 +968,13 @@ documentForm.addEventListener("submit", async (event) => {
         result?.error || @@save_failed@@;
       return;
     }
-    const selectedFiles = data.getAll("files").filter((file) => file.size > 0);
+
+    // Only allow file uploads for regular documents
+    let selectedFiles = [];
+    if (documentType === "regular") {
+      selectedFiles = data.getAll("files").filter((file) => file.size > 0);
+    }
+
     // Retry an upload against the saved document instead of creating a duplicate.
     currentDocumentId = result.id;
     await uploadFiles(result.id, selectedFiles);
@@ -992,6 +992,10 @@ documentForm.addEventListener("submit", async (event) => {
 });
 
 documentSearch.addEventListener("input", applyDocumentFilters);
+
+documentTypeSelect.addEventListener("change", (event) => {
+  applyDocumentType(event.target.value);
+});
 
 async function start() {
   await loadFolders();

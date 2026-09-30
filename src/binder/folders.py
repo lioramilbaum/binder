@@ -27,27 +27,6 @@ class Folders:
     def create(self, name: str, description: str = "") -> dict[str, object]:
         return folder_repository.create_folder(self.factory, name, description)
 
-    def create_ai_thread(
-        self,
-        folder_id: str,
-        title: str,
-        provider: str,
-        conversation_date: str,
-        transcript: str,
-        summary: str,
-        *,
-        conversation_time: str | None = None,
-        source_url: str | None = None,
-        transcript_sha256: str | None = None,
-        source_first_message_at: str | None = None,
-    ) -> Optional[dict[str, object]]:
-        return folder_repository.create_ai_thread(
-            self.factory, folder_id, title, provider, conversation_date, transcript, summary,
-            conversation_time=conversation_time, source_url=source_url,
-            transcript_sha256=transcript_sha256,
-            source_first_message_at=source_first_message_at,
-        )
-
     def create_document(
         self,
         folder_id: str,
@@ -58,9 +37,16 @@ class Folders:
         time: str = "",
         summary: str = "",
         tags: Sequence[str] = (),
+        document_type: str = "regular",
+        provider: str = "",
+        source_url: str | None = None,
+        transcript_sha256: str | None = None,
+        source_first_message_at: str | None = None,
     ) -> Optional[dict[str, object]]:
         return folder_repository.create_document(
-            self.factory, folder_id, date, name, description, content, time, summary, tags=tags
+            self.factory, folder_id, date, name, description, content, time, summary, tags=tags,
+            document_type=document_type, provider=provider, source_url=source_url,
+            transcript_sha256=transcript_sha256, source_first_message_at=source_first_message_at,
         )
 
     def add_files(

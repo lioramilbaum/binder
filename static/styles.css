@@ -54,7 +54,7 @@ h1 { max-width: 680px; margin: 0; font-size: clamp(2.5rem, 6vw, 5.5rem); line-he
 .back-button { margin-bottom: 48px; padding: 0; border: 0; color: var(--muted); background: none; }
 .back-button:hover { color: var(--accent); }
 
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 
 .primary-button, .secondary-button {
@@ -69,7 +69,7 @@ button { cursor: pointer; }
 .primary-button:disabled { cursor: wait; opacity: .65; }
 .secondary-button { color: var(--ink); border-color: var(--line); background: transparent; }
 
-.folders-section, .documents-section, .ai-threads-section { padding-bottom: 80px; }
+.folders-section, .documents-section { padding-bottom: 80px; }
 .documents-section { padding-bottom: 48px; }
 .section-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .section-heading h2 { margin: 0; font-size: 1.4rem; }
@@ -188,10 +188,14 @@ label { margin: 15px 0 7px; font-weight: 700; }
 label span { color: var(--muted); font-size: .8rem; font-weight: 400; }
 .date-time-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .date-time-fields > div { display: grid; }
-input, textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
-input:focus, textarea:focus { outline: 2px solid rgba(184, 76, 44, .25); border-color: var(--accent); }
+input, textarea, select { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+input:focus, textarea:focus, select:focus { outline: 2px solid rgba(184, 76, 44, .25); border-color: var(--accent); }
 textarea { resize: vertical; }
+[hidden] { display: none !important; }
 .error { min-height: 1.2em; margin: 10px 0 0; color: #a2281c; font-size: .88rem; }
+.document-type-fields { border: none; padding: 0; margin: 0; }
+.document-type-fields[disabled] { pointer-events: none; opacity: .6; }
+.document-type-badge { display: inline-block; padding: 2px 8px; background: var(--accent); color: white; border-radius: 12px; font-size: .75rem; font-weight: 700; margin-left: 8px; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; margin-top: 16px; }
 
 .tag-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }

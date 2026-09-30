@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, Column, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import JSON, CheckConstraint, Column, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+
+# Document type constants
+DOCUMENT_TYPE_REGULAR = "regular"
+DOCUMENT_TYPE_AI = "ai"
+DOCUMENT_TYPES = {DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI}
+
+# Content length limits
+MAX_SUMMARY_LENGTH = {"regular": 1000, "ai": 10_000}
+MAX_TRANSCRIPT_LENGTH = 200_000
+MAX_PROVIDER_LENGTH = 100
 
 
 document_tags = Table(
@@ -32,31 +42,6 @@ class Folder(Base):
     documents: Mapped[list["Document"]] = relationship(
         back_populates="folder", cascade="all, delete-orphan"
     )
-    ai_threads: Mapped[list["AiThread"]] = relationship(
-        back_populates="folder", cascade="all, delete-orphan"
-    )
-
-
-class AiThread(Base):
-    """An archived historical AI conversation."""
-
-    __tablename__ = "ai_threads"
-
-    id: Mapped[str] = mapped_column(Text, primary_key=True)
-    folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id", ondelete="CASCADE"), index=True)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    provider: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    conversation_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
-    conversation_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
-    transcript: Mapped[str] = mapped_column(Text, nullable=False)
-    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    imported_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    transcript_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    source_first_message_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
-
-    folder: Mapped[Folder] = relationship(back_populates="ai_threads")
 
 
 class Document(Base):
@@ -66,6 +51,7 @@ class Document(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     folder_id: Mapped[str] = mapped_column(ForeignKey("folders.id"), index=True)
+    type: Mapped[str] = mapped_column(String(16), default=DOCUMENT_TYPE_REGULAR, server_default=DOCUMENT_TYPE_REGULAR, nullable=False)
     date: Mapped[str] = mapped_column(String(32), index=True)
     time: Mapped[str] = mapped_column(String(16), default="")
     name: Mapped[str] = mapped_column(Text)
@@ -76,6 +62,13 @@ class Document(Base):
     updated_at: Mapped[str] = mapped_column(String(64))
     whatsapp_chat: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
     whatsapp_chat_file_id: Mapped[str | None] = mapped_column(Text, default=None)
+    provider: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    imported_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    transcript_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_first_message_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (CheckConstraint("type IN ('regular', 'ai')", name="ck_documents_type"),)
 
     folder: Mapped[Folder] = relationship(back_populates="documents")
     files: Mapped[list["DocumentFile"]] = relationship(

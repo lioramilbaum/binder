@@ -1,5 +1,6 @@
 import io
 import json
+from http import HTTPStatus
 from unittest.mock import Mock, patch
 import unittest
 
@@ -102,9 +103,10 @@ class BinderEditTests(unittest.TestCase):
         handler._send_json.assert_called_once_with({"id": "document"})
 
     def test_rejects_invalid_edits_without_writing(self):
+        # Payloads rejected by do_PATCH validation before calling update_document
         for payload in (
             {"name": " "}, {"name": "x" * 201},
-            {"description": "x" * 1001}, {"summary": "x" * 1001}, {"date": ""},
+            {"description": "x" * 1001}, {"date": ""},
             {"date": "2026-02-30"}, {"time": "25:00"},
             {"content": None}, {"time": False}, {"name": []},
             {}, [], {"id": "replacement"},
@@ -113,6 +115,25 @@ class BinderEditTests(unittest.TestCase):
                 handler = self.patch(payload)
                 handler.store.update_document.assert_not_called()
                 self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_rejects_summary_exceeding_length_in_repository(self):
+        # Summary validation now happens in update_document (repository layer)
+        from binder.folder_repository import DocumentRuleError
+        payload = {"summary": "x" * 1001}
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder/documents/document"
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = Mock()
+        # Mock update_document to raise DocumentRuleError for long summaries
+        handler.store.update_document.side_effect = DocumentRuleError(
+            "Summary exceeds maximum length of 1000 for regular documents"
+        )
+        handler._send_json = Mock()
+        handler.do_PATCH()
+        handler.store.update_document.assert_called_once()
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
 
     def test_optional_fields_can_be_cleared(self):
         payload = {"time": "", "description": "", "content": "", "summary": ""}
@@ -207,68 +228,20 @@ class BinderDeleteTests(unittest.TestCase):
 
 
 class BinderAiThreadTests(unittest.TestCase):
-    def post(self, payload, folder_id="folder", folder_exists=True):
+    """Tests for the deprecated /ai-threads endpoint - now returns 404."""
+
+    def test_ai_threads_endpoint_removed(self):
+        """The old /ai-threads endpoint should return 404."""
         handler = object.__new__(Binder)
-        handler.path = f"/api/folders/{folder_id}/ai-threads"
+        handler.path = "/api/folders/folder/ai-threads"
+        payload = {"title": "Title", "conversation_date": "2026-09-28", "transcript": "Text"}
         body = json.dumps(payload).encode()
         handler.headers = {"Content-Length": str(len(body))}
         handler.rfile = io.BytesIO(body)
         handler.store = Mock()
-        handler.store.create_ai_thread.return_value = {"id": "thread"} if folder_exists else None
-        handler._send_json = Mock()
-        handler.do_POST()
-        return handler
-
-    def test_creates_archived_thread(self):
-        payload = {
-            "title": "  Case review  ", "provider": "ChatGPT",
-            "conversation_date": "2026-09-28", "transcript": "User: hello\nAI: hi",
-            "summary": "Follow up",
-        }
-        handler = self.post(payload)
-        handler.store.create_ai_thread.assert_called_once_with(
-            "folder", "Case review", "ChatGPT", "2026-09-28",
-            "User: hello\nAI: hi", "Follow up",
-            conversation_time=None,
-        )
-        self.assertEqual(handler._send_json.call_args.args[1], 201)
-
-    def test_optional_conversation_time(self):
-        payload = {"title": "Review", "conversation_date": "2026-09-28",
-                   "conversation_time": "09:05", "transcript": "Conversation"}
-        handler = self.post(payload)
-        self.assertEqual(handler.store.create_ai_thread.call_args.kwargs["conversation_time"], "09:05")
-        self.assertEqual(handler._send_json.call_args.args[1], 201)
-
-    def test_rejects_invalid_threads_without_writing(self):
-        base = {"title": "Title", "conversation_date": "2026-09-28", "transcript": "Text"}
-        invalid = [
-            [], {}, {**base, "title": " "}, {**base, "transcript": " \n"},
-            {**base, "conversation_date": "2026-02-30"},
-            {**base, "conversation_date": "20260928"},
-            {**base, "title": 42}, {**base, "provider": None},
-            {**base, "summary": []}, {**base, "transcript": False},
-            {**base, "extra": "field"}, {**base, "title": "x" * 201},
-            {**base, "provider": "x" * 101},
-            {**base, "transcript": "x" * 200_001},
-            {**base, "summary": "x" * 10_001},
-            {**base, "conversation_time": "24:00"},
-            {**base, "conversation_time": "9:00"},
-            {**base, "conversation_time": 905},
-        ]
-        for payload in invalid:
-            with self.subTest(payload=payload if len(str(payload)) < 100 else "large"):
-                handler = self.post(payload)
-                handler.store.create_ai_thread.assert_not_called()
-                self.assertEqual(handler._send_json.call_args.args[1], 400)
-
-    def test_missing_folder_returns_404(self):
-        handler = self.post(
-            {"title": "Title", "conversation_date": "2026-09-28", "transcript": "Text"},
-            folder_exists=False,
-        )
-        handler.store.create_ai_thread.assert_called_once()
-        self.assertEqual(handler._send_json.call_args.args[1], 404)
+        with patch.object(handler, 'send_error') as mock_send_error:
+            handler.do_POST()
+            mock_send_error.assert_called_once_with(HTTPStatus.NOT_FOUND)
 
 
 class BinderCreateDocumentTests(unittest.TestCase):
@@ -315,6 +288,110 @@ class BinderCreateDocumentTests(unittest.TestCase):
                 handler = self.post("/api/folders/folder/documents", payload)
                 handler.store.create_document.assert_not_called()
                 self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+
+class BinderCreateAiDocumentTests(unittest.TestCase):
+    def post(self, path, payload):
+        handler = object.__new__(Binder)
+        handler.path = path
+        body = json.dumps(payload).encode()
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = Mock()
+        handler.store.create_document.return_value = {"id": "document"}
+        handler._send_json = Mock()
+        handler.do_POST()
+        return handler
+
+    def test_create_valid_ai_document(self):
+        """Test creating a valid AI document with content preservation."""
+        payload = {
+            "type": "ai",
+            "name": "Chat",
+            "date": "2026-01-01",
+            "content": "User: hi\nAssistant: hello",
+            "provider": "ChatGPT",
+            "summary": "",
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_called_once()
+        call_args = handler.store.create_document.call_args
+        call_kwargs = call_args.kwargs
+        # Content is positional arg 4 (after folder_id, date, name, description)
+        content_arg = call_args.args[4]
+        self.assertEqual(call_kwargs["document_type"], "ai")
+        self.assertEqual(call_kwargs["provider"], "ChatGPT")
+        # Content should NOT be stripped for AI documents
+        self.assertEqual(content_arg, "User: hi\nAssistant: hello")
+
+    def test_create_ai_document_preserves_leading_trailing_whitespace(self):
+        """Test that leading/trailing whitespace in content is preserved for AI documents."""
+        payload = {
+            "type": "ai",
+            "name": "Chat",
+            "date": "2026-01-01",
+            "content": "  User: hi\nAssistant: hello  ",
+            "provider": "ChatGPT",
+            "summary": "",
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_called_once()
+        call_args = handler.store.create_document.call_args
+        # Content is positional arg 4 (after folder_id, date, name, description)
+        content_arg = call_args.args[4]
+        # Whitespace should be preserved
+        self.assertEqual(content_arg, "  User: hi\nAssistant: hello  ")
+
+    def test_rejects_invalid_document_type(self):
+        """Test that invalid document type returns 400."""
+        payload = {
+            "type": "invalid",
+            "name": "Chat",
+            "date": "2026-01-01",
+            "content": "Text",
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_not_called()
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_rejects_ai_document_with_summary_exceeding_10000(self):
+        """Test that AI document with summary > 10000 chars returns 400."""
+        payload = {
+            "type": "ai",
+            "name": "Chat",
+            "date": "2026-01-01",
+            "content": "Text",
+            "summary": "x" * 10001,
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_not_called()
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_accepts_ai_document_with_summary_of_5000(self):
+        """Test that AI document with summary of 5000 chars is accepted."""
+        payload = {
+            "type": "ai",
+            "name": "Chat",
+            "date": "2026-01-01",
+            "content": "Text",
+            "summary": "x" * 5000,
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_called_once()
+        self.assertEqual(handler._send_json.call_args.args[1], 201)
+
+    def test_rejects_provider_on_regular_document(self):
+        """Test that setting provider on a regular document returns 400."""
+        payload = {
+            "type": "regular",
+            "name": "Document",
+            "date": "2026-01-01",
+            "content": "Text",
+            "provider": "ChatGPT",
+        }
+        handler = self.post("/api/folders/folder/documents", payload)
+        handler.store.create_document.assert_not_called()
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
 
 
 class BinderTagsTests(unittest.TestCase):
