@@ -68,10 +68,23 @@ class I18nTests(unittest.TestCase):
         for locale in ("he", "en"):
             page = _get("/", locale)
             script = _get("/app.js", locale)
-            self.assertIn('id="ai-thread-time" name="conversation_time" type="time"', page)
+            # Check for document type select with ai option
+            self.assertIn('<select id="document-type" name="type">', page)
+            self.assertIn('value="regular"', page)
+            self.assertIn('value="ai"', page)
+            # Check for AI-specific fields with proper visibility
+            self.assertIn('data-document-type="ai"', page)
+            self.assertIn('id="document-provider"', page)
+            self.assertIn('name="provider"', page)
+            # Check for share dialog time fields
             self.assertIn('id="ai-share-time" name="conversation_time" type="time"', page)
+            # Check script functions
             self.assertIn('localDateTimeInputs(result.source_first_message_at)', script)
             self.assertIn('result.warnings.includes("timestamp_unavailable")', script)
+            self.assertIn('function applyDocumentType(', script)
+            # Verify old AI-thread specific elements are absent
+            self.assertNotIn('id="ai-thread-dialog"', page)
+            self.assertNotIn('ai-threads-section', page)
 
     def test_rejects_unknown_locale(self):
         with self.assertRaises(ValueError):

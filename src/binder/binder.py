@@ -24,9 +24,11 @@ from .config import (
     STATIC_DIR,
 )
 from .folders import Folders
+from .folder_repository import DocumentRuleError
 from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .i18n import Translator
 from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags
+from .models import DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI, DOCUMENT_TYPES, MAX_SUMMARY_LENGTH
 
 
 class _SharePreviewCache:
@@ -145,15 +147,18 @@ class Binder(BaseHTTPRequestHandler):
         is_document_request = path.startswith("/api/folders/") and path.endswith(
             "/documents"
         )
-        is_ai_thread_request = bool(re.fullmatch(r"/api/folders/[^/]+/ai-threads", path))
-        share_match = re.fullmatch(r"/api/folders/([^/]+)/ai-threads/share-(preview|confirm)", path)
-        if not is_folder_request and not is_document_request and not is_ai_thread_request and not share_match:
+        # Return 404 for deprecated /ai-threads endpoint
+        if bool(re.fullmatch(r"/api/folders/[^/]+/ai-threads", path)):
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        share_match = re.fullmatch(r"/api/folders/([^/]+)/documents/share-(preview|confirm)", path)
+        if not is_folder_request and not is_document_request and not share_match:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if (is_ai_thread_request or share_match) and (length <= 0 or length > 1_000_000):
+            if share_match and (length <= 0 or length > 1_000_000):
                 self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
             payload = json.loads(self.rfile.read(length))
@@ -166,9 +171,6 @@ class Binder(BaseHTTPRequestHandler):
 
         if is_document_request:
             self._create_document(path, payload)
-            return
-        if is_ai_thread_request:
-            self._create_ai_thread(path, payload)
             return
         if share_match:
             if share_match.group(2) == "preview":
@@ -187,50 +189,6 @@ class Binder(BaseHTTPRequestHandler):
             return
 
         self._send_json(self.store.create(name, description), HTTPStatus.CREATED)
-
-    def _create_ai_thread(self, path: str, payload: dict[str, object]) -> None:
-        allowed = {"title", "provider", "conversation_date", "conversation_time", "transcript", "summary"}
-        if set(payload) - allowed or any(
-            not isinstance(payload.get(key, ""), str) for key in allowed
-        ):
-            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
-            return
-
-        title = payload.get("title", "").strip()
-        provider = payload.get("provider", "").strip()
-        conversation_date = payload.get("conversation_date", "")
-        conversation_time = payload.get("conversation_time", "")
-        transcript = payload.get("transcript", "")
-        summary = payload.get("summary", "")
-        if not title or not transcript.strip() or not conversation_date:
-            self._send_json({"error": "יש להזין כותרת, תאריך ושיחה"}, HTTPStatus.BAD_REQUEST)
-            return
-        if (
-            len(title) > 200 or len(provider) > 100
-            or len(transcript) > 200_000 or len(summary) > 10_000
-        ):
-            self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", conversation_date):
-                raise ValueError
-            date.fromisoformat(conversation_date)
-        except ValueError:
-            self._send_json({"error": "התאריך אינו תקין"}, HTTPStatus.BAD_REQUEST)
-            return
-        if conversation_time and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", conversation_time):
-            self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
-            return
-
-        folder_id = path.removeprefix("/api/folders/").removesuffix("/ai-threads")
-        thread = self.store.create_ai_thread(
-            folder_id, title, provider, conversation_date, transcript, summary,
-            conversation_time=conversation_time or None,
-        )
-        if thread is None:
-            self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
-            return
-        self._send_json(thread, HTTPStatus.CREATED)
 
     def _preview_shared_thread(self, folder_id: str, payload: dict[str, object]) -> None:
         if set(payload) != {"url"} or not isinstance(payload["url"], str):
@@ -287,18 +245,23 @@ class Binder(BaseHTTPRequestHandler):
         if preview is None:
             self._send_json({"error": "preview_unavailable"}, HTTPStatus.GONE)
             return
-        thread = self.store.create_ai_thread(
-            folder_id, preview.title, "ChatGPT", conversation_date,
-            preview.transcript, summary,
-            conversation_time=conversation_time or None,
+        document = self.store.create_document(
+            folder_id, conversation_date, preview.title,
+            description="",
+            content=preview.transcript,
+            time=conversation_time or "",
+            summary=summary,
+            tags=[],
+            document_type="ai",
+            provider="ChatGPT",
             source_url=preview.source_url,
             transcript_sha256=hashlib.sha256(preview.transcript.encode("utf-8")).hexdigest(),
             source_first_message_at=preview.source_first_message_at,
         )
-        if thread is None:
+        if document is None:
             self._send_json({"error": "folder_not_found"}, HTTPStatus.NOT_FOUND)
             return
-        self._send_json(thread, HTTPStatus.CREATED)
+        self._send_json(document, HTTPStatus.CREATED)
 
     def do_PATCH(self) -> None:
         path = urlparse(self.path).path
@@ -320,7 +283,12 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
             return
 
-        allowed_keys = {"name", "date", "time", "description", "content", "summary", "tags"}
+        # Reject type field (immutable after creation)
+        if "type" in payload:
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        allowed_keys = {"name", "date", "time", "description", "content", "summary", "tags", "provider"}
         updates = {k: v for k, v in payload.items() if k in allowed_keys}
 
         if not updates:
@@ -352,7 +320,6 @@ class Binder(BaseHTTPRequestHandler):
         if (
             len(updates.get("name", "")) > 200
             or len(updates.get("description", "")) > 1000
-            or len(updates.get("summary", "")) > 1000
         ):
             self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
             return
@@ -370,7 +337,11 @@ class Binder(BaseHTTPRequestHandler):
                 self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
 
-        document = self.store.update_document(parts[2], parts[4], updates)
+        try:
+            document = self.store.update_document(parts[2], parts[4], updates)
+        except DocumentRuleError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if document is None:
             self._send_json({"error": "המסמך לא נמצא"}, HTTPStatus.NOT_FOUND)
             return
@@ -395,8 +366,20 @@ class Binder(BaseHTTPRequestHandler):
         document_date = str(payload.get("date", "")).strip()
         document_time = str(payload.get("time", "")).strip()
         description = str(payload.get("description", "")).strip()
-        content = str(payload.get("content", "")).strip()
         summary = str(payload.get("summary", "")).strip()
+        document_type = str(payload.get("type", DOCUMENT_TYPE_REGULAR)).strip()
+        provider = str(payload.get("provider", "")).strip()
+
+        # Apply type-aware content processing
+        raw_content = payload.get("content", "")
+        if not isinstance(raw_content, str):
+            raw_content = ""
+        content = raw_content if document_type == DOCUMENT_TYPE_AI else raw_content.strip()
+
+        # Validate document type
+        if document_type not in DOCUMENT_TYPES:
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
 
         tags, tag_error = self._parse_tags(payload.get("tags", []))
         if tag_error:
@@ -419,20 +402,31 @@ class Binder(BaseHTTPRequestHandler):
             except ValueError:
                 self._send_json({"error": "השעה אינה תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
-        if len(name) > 200 or len(description) > 1000 or len(summary) > 1000:
+        if len(name) > 200 or len(description) > 1000 or len(summary) > MAX_SUMMARY_LENGTH[document_type]:
             self._send_json({"error": "הטקסט ארוך מדי"}, HTTPStatus.BAD_REQUEST)
             return
 
-        document = self.store.create_document(
-            folder_id,
-            document_date,
-            name,
-            description,
-            content,
-            document_time,
-            summary=summary,
-            tags=tags,
-        )
+        # Validate provider: only allowed on AI documents
+        if provider and document_type != DOCUMENT_TYPE_AI:
+            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            document = self.store.create_document(
+                folder_id,
+                document_date,
+                name,
+                description,
+                content,
+                document_time,
+                summary=summary,
+                tags=tags,
+                document_type=document_type,
+                provider=provider,
+            )
+        except DocumentRuleError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if document is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
             return

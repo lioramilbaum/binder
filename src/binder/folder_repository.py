@@ -13,9 +13,23 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from .database import session_scope
 from .large_objects import create_large_object, hash_stream, read_large_object
-from .models import AiThread, Document, DocumentFile, Folder, Tag
+from .models import (
+    DOCUMENT_TYPE_AI,
+    DOCUMENT_TYPE_REGULAR,
+    MAX_SUMMARY_LENGTH,
+    MAX_TRANSCRIPT_LENGTH,
+    Document,
+    DocumentFile,
+    Folder,
+    Tag,
+)
 from .tags import normalize_tags, tag_key
 from .whatsapp import WhatsAppChat
+
+
+class DocumentRuleError(ValueError):
+    """Raised when a document operation violates business rules."""
+    pass
 
 
 def _now() -> str:
@@ -81,6 +95,7 @@ def _file_to_dict(file: DocumentFile) -> dict[str, object]:
 def _document_summary(document: Document) -> dict[str, object]:
     return {
         "id": document.id,
+        "type": document.type,
         "date": document.date,
         "time": document.time,
         "name": document.name,
@@ -100,29 +115,25 @@ def _document_to_dict(document: Document) -> dict[str, object]:
         result["whatsapp_chat"] = document.whatsapp_chat
     if document.whatsapp_chat_file_id is not None:
         result["whatsapp_chat_file_id"] = document.whatsapp_chat_file_id
+
+    # Add AI-specific fields for AI documents
+    if document.type == DOCUMENT_TYPE_AI:
+        if document.provider:
+            result["provider"] = document.provider
+        if document.source_url:
+            result["source_url"] = document.source_url
+        if document.imported_at:
+            result["imported_at"] = document.imported_at
+        if document.transcript_sha256:
+            result["transcript_sha256"] = document.transcript_sha256
+        if document.source_first_message_at:
+            result["source_first_message_at"] = document.source_first_message_at
+
     return result
 
 
 def _document_sort_key(document: Document) -> tuple[str, str, str]:
     return (document.date or "", document.time or "", document.created_at or "")
-
-
-def _ai_thread_to_dict(thread: AiThread) -> dict[str, object]:
-    return {
-        "id": thread.id,
-        "folder_id": thread.folder_id,
-        "title": thread.title,
-        "provider": thread.provider,
-        "conversation_date": thread.conversation_date,
-        "conversation_time": thread.conversation_time,
-        "transcript": thread.transcript,
-        "summary": thread.summary,
-        "created_at": thread.created_at,
-        "source_url": thread.source_url,
-        "imported_at": thread.imported_at,
-        "transcript_sha256": thread.transcript_sha256,
-        "source_first_message_at": thread.source_first_message_at,
-    }
 
 
 def list_folders(factory: sessionmaker[Session]) -> list[dict[str, object]]:
@@ -162,7 +173,6 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
                 selectinload(Folder.documents)
                 .selectinload(Document.tags)
             )
-            .options(selectinload(Folder.ai_threads))
             .filter(Folder.id == folder_id)
             .one_or_none()
         )
@@ -176,17 +186,6 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
             "created_at": folder.created_at,
             "updated_at": folder.updated_at,
             "documents": [_document_to_dict(document) for document in documents],
-            "ai_threads": [
-                _ai_thread_to_dict(thread)
-                for thread in sorted(
-                    folder.ai_threads,
-                    key=lambda thread: (
-                        thread.conversation_date, thread.conversation_time or "",
-                        thread.created_at, thread.id,
-                    ),
-                    reverse=True,
-                )
-            ],
         }
 
 
@@ -212,50 +211,7 @@ def create_folder(
         "created_at": folder.created_at,
         "updated_at": folder.updated_at,
         "documents": [],
-        "ai_threads": [],
     }
-
-
-def create_ai_thread(
-    factory: sessionmaker[Session],
-    folder_id: str,
-    title: str,
-    provider: str,
-    conversation_date: str,
-    transcript: str,
-    summary: str,
-    *,
-    conversation_time: str | None = None,
-    source_url: str | None = None,
-    transcript_sha256: str | None = None,
-    source_first_message_at: str | None = None,
-) -> dict[str, object] | None:
-    """Save an archived conversation, or return None for an absent folder."""
-
-    with session_scope(factory) as session:
-        folder = session.get(Folder, folder_id)
-        if folder is None:
-            return None
-        now = _now()
-        thread = AiThread(
-            id=str(uuid4()),
-            folder_id=folder_id,
-            title=title,
-            provider=provider,
-            conversation_date=conversation_date,
-            conversation_time=conversation_time,
-            transcript=transcript,
-            summary=summary,
-            created_at=now,
-            source_url=source_url,
-            imported_at=now if source_url else None,
-            transcript_sha256=transcript_sha256,
-            source_first_message_at=source_first_message_at,
-        )
-        session.add(thread)
-        folder.updated_at = now
-        session.flush()
-        return _ai_thread_to_dict(thread)
 
 
 def create_document(
@@ -268,6 +224,11 @@ def create_document(
     time: str = "",
     summary: str = "",
     tags: Sequence[str] = (),
+    document_type: str = DOCUMENT_TYPE_REGULAR,
+    provider: str = "",
+    source_url: str | None = None,
+    transcript_sha256: str | None = None,
+    source_first_message_at: str | None = None,
 ) -> dict[str, object] | None:
     """Create a document in a folder, or return ``None`` if the folder is missing."""
 
@@ -276,17 +237,27 @@ def create_document(
         folder = session.get(Folder, folder_id)
         if folder is None:
             return None
+
+        # For AI documents, keep content verbatim; for regular, strip whitespace
+        processed_content = content if document_type == DOCUMENT_TYPE_AI else content.strip()
+
         document = Document(
             id=str(uuid4()),
             folder_id=folder_id,
+            type=document_type,
             date=date,
             time=time,
             name=name.strip(),
             description=description.strip(),
-            content=content.strip(),
+            content=processed_content,
             summary=summary.strip(),
             created_at=now,
             updated_at=now,
+            provider=provider,
+            source_url=source_url,
+            imported_at=now if source_url else None,
+            transcript_sha256=transcript_sha256,
+            source_first_message_at=source_first_message_at,
         )
         session.add(document)
         document.tags = _resolve_tags(session, list(tags))
@@ -301,7 +272,10 @@ def update_document(
     document_id: str,
     updates: dict[str, str | list[str]],
 ) -> dict[str, object] | None:
-    """Apply field updates to a document, or return ``None`` if it doesn't exist."""
+    """Apply field updates to a document, or return ``None`` if it doesn't exist.
+
+    Raises DocumentRuleError for constraint violations.
+    """
 
     with session_scope(factory) as session:
         document = (
@@ -313,11 +287,44 @@ def update_document(
         )
         if document is None:
             return None
-        for key in ("name", "date", "time", "description", "content", "summary"):
+
+        # Check business rules before applying updates
+        if "provider" in updates:
+            new_provider = str(updates["provider"]).strip() if updates["provider"] else ""
+            # Non-empty provider only allowed on AI documents
+            if new_provider and document.type == DOCUMENT_TYPE_REGULAR:
+                raise DocumentRuleError("Provider can only be set on AI documents")
+
+        # Check if trying to change imported transcript (source_url indicates imported)
+        if "content" in updates and document.source_url:
+            raise DocumentRuleError("Cannot modify transcript of imported AI document")
+
+        # Validate AI document content
+        if document.type == DOCUMENT_TYPE_AI and "content" in updates:
+            new_content = str(updates["content"])
+            if not new_content.strip():
+                raise DocumentRuleError("AI document transcript cannot be empty")
+            if len(new_content) > MAX_TRANSCRIPT_LENGTH:
+                raise DocumentRuleError(f"AI document transcript exceeds maximum length of {MAX_TRANSCRIPT_LENGTH}")
+
+        # Validate summary length
+        if "summary" in updates:
+            new_summary = str(updates["summary"]).strip()
+            max_len = MAX_SUMMARY_LENGTH.get(document.type, 1000)
+            if len(new_summary) > max_len:
+                raise DocumentRuleError(f"Summary exceeds maximum length of {max_len} for {document.type} documents")
+
+        for key in ("name", "date", "time", "description", "content", "summary", "provider"):
             if key in updates:
-                setattr(document, key, str(updates[key]).strip())
+                # For content in AI docs, keep verbatim; otherwise strip
+                if key == "content" and document.type == DOCUMENT_TYPE_AI:
+                    setattr(document, key, str(updates[key]))
+                else:
+                    setattr(document, key, str(updates[key]).strip())
+
         if "tags" in updates:
             document.tags = _resolve_tags(session, updates["tags"])
+
         now = _now()
         document.updated_at = now
         document.folder.updated_at = now

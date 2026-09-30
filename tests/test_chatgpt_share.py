@@ -448,13 +448,13 @@ class EndpointTests(unittest.TestCase):
 
     def post(self, suffix, payload, folder="folder", exists=True):
         handler = object.__new__(Binder)
-        handler.path = f"/api/folders/{folder}/ai-threads/{suffix}"
+        handler.path = f"/api/folders/{folder}/documents/share-{suffix}"
         data = json.dumps(payload).encode()
         handler.headers = {"Content-Length": str(len(data))}
         handler.rfile = io.BytesIO(data)
         handler.store = Mock()
         handler.store.get.return_value = {"id": folder} if exists else None
-        handler.store.create_ai_thread.return_value = {"id": "saved"}
+        handler.store.create_document.return_value = {"id": "saved"}
         handler.share_previews = self.cache
         handler._send_json = Mock()
         handler.do_POST()
@@ -462,62 +462,68 @@ class EndpointTests(unittest.TestCase):
 
     def test_preview_then_exact_one_time_confirmation(self):
         with patch("binder.binder.import_share_url", return_value=self.preview) as importer:
-            preview_handler = self.post("share-preview", {"url": LINK})
+            preview_handler = self.post("preview", {"url": LINK})
         importer.assert_called_once_with(LINK)
-        preview_handler.store.create_ai_thread.assert_not_called()
+        preview_handler.store.create_document.assert_not_called()
         self.assertEqual(preview_handler._send_json.call_args.args[0]["source_first_message_at"],
                          self.preview.source_first_message_at)
         preview_id = preview_handler._send_json.call_args.args[0]["preview_id"]
-        confirm = self.post("share-confirm", {
+        confirm = self.post("confirm", {
             "preview_id": preview_id, "conversation_date": "2026-09-28",
             "conversation_time": "14:35", "summary": "My note",
         })
-        confirm.store.create_ai_thread.assert_called_once_with(
-            "folder", "Test", "ChatGPT", "2026-09-28", self.preview.transcript, "My note",
-            source_url=LINK,
-            transcript_sha256=hashlib.sha256(self.preview.transcript.encode()).hexdigest(),
-            conversation_time="14:35",
-            source_first_message_at=self.preview.source_first_message_at,
-        )
+        confirm.store.create_document.assert_called_once()
+        call_args = confirm.store.create_document.call_args
+        self.assertEqual(call_args.args[0], "folder")
+        self.assertEqual(call_args.args[1], "2026-09-28")
+        self.assertEqual(call_args.args[2], "Test")
+        self.assertEqual(call_args.kwargs["document_type"], "ai")
+        self.assertEqual(call_args.kwargs["provider"], "ChatGPT")
+        self.assertEqual(call_args.kwargs["content"], self.preview.transcript)
+        self.assertEqual(call_args.kwargs["summary"], "My note")
+        self.assertEqual(call_args.kwargs["source_url"], LINK)
+        self.assertEqual(call_args.kwargs["transcript_sha256"], hashlib.sha256(self.preview.transcript.encode()).hexdigest())
+        self.assertEqual(call_args.kwargs["time"], "14:35")
+        self.assertEqual(call_args.kwargs["source_first_message_at"], self.preview.source_first_message_at)
         self.assertEqual(confirm._send_json.call_args.args[1], 201)
-        again = self.post("share-confirm", {"preview_id": preview_id, "conversation_date": "2026-09-28"})
+        again = self.post("confirm", {"preview_id": preview_id, "conversation_date": "2026-09-28"})
         self.assertEqual(again._send_json.call_args.args[1], 410)
-        again.store.create_ai_thread.assert_not_called()
+        again.store.create_document.assert_not_called()
 
     def test_wrong_folder_expired_and_missing_folder(self):
         token = self.cache.put("folder", self.preview)
-        wrong = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"}, folder="other")
+        wrong = self.post("confirm", {"preview_id": token, "conversation_date": "2026-09-28"}, folder="other")
         self.assertEqual(wrong._send_json.call_args.args[1], 410)
         with patch("binder.binder.clock.monotonic", return_value=float("inf")):
-            expired = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
+            expired = self.post("confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
         self.assertEqual(expired._send_json.call_args.args[1], 410)
         with patch("binder.binder.import_share_url") as importer:
-            handler = self.post("share-preview", {"url": LINK}, exists=False)
+            handler = self.post("preview", {"url": LINK}, exists=False)
         importer.assert_not_called()
         self.assertEqual(handler._send_json.call_args.args[1], 404)
 
     def test_import_time_is_optional_and_source_time_cannot_be_submitted(self):
         token = self.cache.put("folder", self.preview)
-        rejected = self.post("share-confirm", {
+        rejected = self.post("confirm", {
             "preview_id": token, "conversation_date": "2026-09-28",
             "source_first_message_at": "2000-01-01T00:00:00+00:00",
         })
         self.assertEqual(rejected._send_json.call_args.args[1], 400)
-        saved = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
-        self.assertEqual(saved.store.create_ai_thread.call_args.kwargs["conversation_time"], None)
-        self.assertEqual(saved.store.create_ai_thread.call_args.kwargs["source_first_message_at"],
+        saved = self.post("confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
+        self.assertEqual(saved.store.create_document.call_args.kwargs["time"], "")
+        self.assertEqual(saved.store.create_document.call_args.kwargs["source_first_message_at"],
                          self.preview.source_first_message_at)
 
     def test_invalid_import_time_does_not_consume_preview(self):
         for invalid in ("24:00", "9:00", "12:60", 123):
             with self.subTest(invalid=invalid):
                 token = self.cache.put("folder", self.preview)
-                rejected = self.post("share-confirm", {
+                rejected = self.post("confirm", {
                     "preview_id": token, "conversation_date": "2026-09-28", "conversation_time": invalid,
                 })
                 self.assertEqual(rejected._send_json.call_args.args[1], 400)
-                rejected.store.create_ai_thread.assert_not_called()
-                saved = self.post("share-confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
+                rejected.store.create_document.assert_not_called()
+                saved = self.post("confirm", {"preview_id": token, "conversation_date": "2026-09-28"})
                 self.assertEqual(saved._send_json.call_args.args[1], 201)
 
 

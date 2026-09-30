@@ -50,6 +50,7 @@
             <h2 id="documents-heading">@@documents@@</h2>
             <div class="section-actions">
               <span id="document-count"></span>
+              <button class="secondary-button small-button" id="import-ai-thread-button" type="button">@@import_ai_thread@@</button>
               <button class="primary-button small-button" id="new-document-button" type="button">@@new_document@@</button>
             </div>
           </div>
@@ -62,20 +63,6 @@
             <div class="empty-icon document-empty-icon" aria-hidden="true">▤</div>
             <h3>@@no_documents@@</h3>
             <p>@@no_documents_hint@@</p>
-          </div>
-        </section>
-        <section class="ai-threads-section" aria-labelledby="ai-threads-heading">
-          <div class="section-heading">
-            <h2 id="ai-threads-heading">@@ai_threads@@</h2>
-            <div class="section-actions">
-              <button class="secondary-button small-button" id="import-ai-thread-button" type="button">@@import_ai_thread@@</button>
-              <button class="primary-button small-button" id="new-ai-thread-button" type="button">@@new_ai_thread@@</button>
-            </div>
-          </div>
-          <div id="ai-threads" class="document-list" aria-live="polite"></div>
-          <div id="ai-threads-empty-state" class="empty-state" hidden>
-            <h3>@@no_ai_threads@@</h3>
-            <p>@@no_ai_threads_hint@@</p>
           </div>
         </section>
       </div>
@@ -102,45 +89,10 @@
       </form>
     </dialog>
 
-    <dialog id="ai-thread-dialog">
-      <form id="ai-thread-form">
-        <div class="dialog-heading">
-          <div>
-            <p class="eyebrow">@@ai_threads@@</p>
-            <h2>@@new_ai_thread_title@@</h2>
-          </div>
-          <button class="icon-button" id="close-ai-thread-dialog" type="button" aria-label="@@close@@">×</button>
-        </div>
-        <label for="ai-thread-title">@@ai_thread_title@@</label>
-        <input id="ai-thread-title" name="title" dir="auto" maxlength="200" required>
-        <label for="ai-thread-provider">@@ai_thread_provider@@ <span>@@optional@@</span></label>
-        <input id="ai-thread-provider" name="provider" dir="auto" maxlength="100" placeholder="@@ai_thread_provider_placeholder@@">
-        <div class="date-time-fields">
-          <div>
-            <label for="ai-thread-date">@@ai_thread_date@@</label>
-            <input id="ai-thread-date" name="conversation_date" type="date" required>
-          </div>
-          <div>
-            <label for="ai-thread-time">@@ai_thread_time@@ <span>@@optional@@</span></label>
-            <input id="ai-thread-time" name="conversation_time" type="time">
-          </div>
-        </div>
-        <label for="ai-thread-transcript">@@ai_thread_transcript@@</label>
-        <textarea id="ai-thread-transcript" name="transcript" dir="auto" maxlength="200000" rows="12" required></textarea>
-        <label for="ai-thread-summary">@@ai_thread_summary@@ <span>@@optional@@</span></label>
-        <textarea id="ai-thread-summary" name="summary" dir="auto" maxlength="10000" rows="4"></textarea>
-        <p id="ai-thread-form-error" class="error" role="alert"></p>
-        <div class="dialog-actions">
-          <button class="secondary-button" id="cancel-ai-thread-dialog" type="button">@@cancel@@</button>
-          <button class="primary-button" type="submit">@@save_ai_thread@@</button>
-        </div>
-      </form>
-    </dialog>
-
     <dialog id="ai-share-dialog" aria-labelledby="ai-share-heading">
       <div class="dialog-heading share-dialog-heading">
         <div>
-          <p class="eyebrow">@@ai_threads@@</p>
+          <p class="eyebrow">@@documents@@</p>
           <h2 id="ai-share-heading">@@import_ai_thread@@</h2>
         </div>
         <button class="icon-button" id="close-ai-share-dialog" type="button" aria-label="@@close@@">×</button>
@@ -163,20 +115,20 @@
         <pre id="ai-share-transcript" class="share-transcript" dir="auto" tabindex="0" aria-labelledby="ai-share-transcript-heading"></pre>
         <div class="date-time-fields">
           <div>
-            <label for="ai-share-date">@@ai_thread_date@@</label>
+            <label for="ai-share-date">@@date@@</label>
             <input id="ai-share-date" name="conversation_date" type="date" required>
           </div>
           <div>
-            <label for="ai-share-time">@@ai_thread_time@@ <span>@@optional@@</span></label>
+            <label for="ai-share-time">@@time@@ <span>@@optional@@</span></label>
             <input id="ai-share-time" name="conversation_time" type="time">
           </div>
         </div>
-        <label for="ai-share-summary">@@ai_thread_summary@@ <span>@@optional@@</span></label>
+        <label for="ai-share-summary">@@summary@@ <span>@@optional@@</span></label>
         <textarea id="ai-share-summary" name="summary" dir="auto" maxlength="10000" rows="4"></textarea>
         <p id="ai-share-confirm-error" class="error" role="alert"></p>
         <div class="dialog-actions">
           <button class="secondary-button" id="ai-share-back" type="button">@@back@@</button>
-          <button class="primary-button" type="submit">@@save_ai_thread@@</button>
+          <button class="primary-button" type="submit">@@save_document@@</button>
         </div>
       </form>
     </dialog>
@@ -190,39 +142,56 @@
           </div>
           <button class="icon-button" id="close-document-dialog" type="button" aria-label="@@close@@">×</button>
         </div>
+        <label for="document-type">@@document_type@@</label>
+        <select id="document-type" name="type">
+          <option value="regular" selected>@@document_type_regular@@</option>
+          <option value="ai">@@document_type_ai@@</option>
+        </select>
         <div class="date-time-fields">
           <div>
             <label for="document-date">@@date@@</label>
             <input id="document-date" name="date" type="date" required>
           </div>
           <div>
-            <label for="document-time">@@time@@ <span>@@optional@@</span></label>
+            <label for="document-time" id="document-time-label" data-for-type="regular">@@time@@ <span>@@optional@@</span></label>
             <input id="document-time" name="time" type="time">
           </div>
         </div>
-        <label for="document-name">@@document_name@@</label>
+        <label for="document-name" data-for-type="regular">@@document_name@@</label>
+        <label for="document-name" data-for-type="ai" hidden>@@ai_thread_title@@</label>
         <input id="document-name" dir="auto" name="name" maxlength="200" required placeholder="@@document_name_placeholder@@">
-        <label for="document-description">@@short_description@@ <span>@@optional@@</span></label>
-        <textarea id="document-description" dir="auto" name="description" maxlength="1000" rows="2" placeholder="@@document_description_placeholder@@"></textarea>
-        <label for="document-content">@@content@@</label>
-        <textarea id="document-content" dir="auto" class="content-input" name="content" rows="10" placeholder="@@content_placeholder@@"></textarea>
-        <label for="document-summary">@@summary@@ <span>@@optional@@</span></label>
+        <fieldset class="document-type-fields" data-document-type="regular">
+          <label for="document-description" data-for-type="regular">@@short_description@@ <span>@@optional@@</span></label>
+          <textarea id="document-description" dir="auto" name="description" maxlength="1000" rows="2" placeholder="@@document_description_placeholder@@"></textarea>
+          <label for="document-content" data-for-type="regular">@@content@@</label>
+          <textarea id="document-content" dir="auto" class="content-input" name="content" rows="10" placeholder="@@content_placeholder@@"></textarea>
+        </fieldset>
+        <fieldset class="document-type-fields" data-document-type="ai" hidden disabled>
+          <label for="document-provider" data-for-type="ai">@@ai_thread_provider@@ <span>@@optional@@</span></label>
+          <input id="document-provider" dir="auto" name="provider" maxlength="100" placeholder="@@ai_thread_provider_placeholder@@">
+          <label for="document-transcript" data-for-type="ai">@@ai_thread_transcript@@</label>
+          <textarea id="document-transcript" dir="auto" class="content-input" name="content" maxlength="200000" rows="12" placeholder="@@ai_thread_transcript_placeholder@@"></textarea>
+          <p class="field-hint" id="imported-transcript-locked-hint" hidden>@@imported_transcript_locked@@</p>
+        </fieldset>
+        <label for="document-summary" data-for-type="regular">@@summary@@ <span>@@optional@@</span></label>
         <textarea id="document-summary" dir="auto" name="summary" maxlength="1000" rows="3" placeholder="@@summary_placeholder@@"></textarea>
-        <label for="document-tag-input">@@tags@@ <span>@@optional@@</span></label>
-        <div class="tag-editor" id="document-tag-editor">
+        <label for="document-tag-input" data-for-type="regular">@@tags@@ <span>@@optional@@</span></label>
+        <div class="tag-editor" id="document-tag-editor" data-document-type="regular">
           <div class="tag-list" id="document-tags"></div>
           <input id="document-tag-input" dir="auto" list="tag-suggestions" maxlength="50" autocomplete="off" placeholder="@@tags_placeholder@@">
         </div>
         <datalist id="tag-suggestions"></datalist>
-        <label for="document-files">@@files@@ <span>@@files_optional@@</span></label>
-        <div class="file-drop-zone" id="document-file-drop-zone" role="button" tabindex="0">
-          <input id="document-files" name="files" type="file" multiple hidden>
-          <strong>@@drop_files@@</strong>
-          <span>@@drop_files_hint@@</span>
-          <button class="secondary-button small-button" id="google-drive-import-button" type="button" hidden>@@google_drive_import@@</button>
-          <div class="selected-files" id="document-selected-files"></div>
-        </div>
-        <p class="field-hint">@@paste_hint@@</p>
+        <fieldset class="document-type-fields" data-document-type="regular">
+          <label for="document-files" data-for-type="regular">@@files@@ <span>@@files_optional@@</span></label>
+          <div class="file-drop-zone" id="document-file-drop-zone" role="button" tabindex="0">
+            <input id="document-files" name="files" type="file" multiple hidden>
+            <strong>@@drop_files@@</strong>
+            <span>@@drop_files_hint@@</span>
+            <button class="secondary-button small-button" id="google-drive-import-button" type="button" hidden>@@google_drive_import@@</button>
+            <div class="selected-files" id="document-selected-files"></div>
+          </div>
+          <p class="field-hint">@@paste_hint@@</p>
+        </fieldset>
         <p id="document-form-error" class="error" role="alert"></p>
         <div class="dialog-actions">
           <button class="secondary-button" id="cancel-document-dialog" type="button">@@cancel@@</button>
