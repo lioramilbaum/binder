@@ -885,8 +885,6 @@ aiShareConfirmForm.addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
-document.querySelector("#close-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());
-document.querySelector("#cancel-ai-thread-dialog").addEventListener("click", () => aiThreadDialog.close());
 
 dialog.addEventListener("click", (event) => {
   if (event.target === dialog) dialog.close();
