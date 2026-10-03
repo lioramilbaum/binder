@@ -95,6 +95,39 @@ class I18nTests(unittest.TestCase):
         self.assertIn("&quot;", translator.html("confirm_delete_file"))
         self.assertTrue(translator.js("confirm_delete_file").startswith('"'))
 
+    def test_import_share_button_lives_in_ai_document_fields(self):
+        for locale in ("he", "en"):
+            page = _get("/", locale)
+            script = _get("/app.js", locale)
+
+            # Markup assertions
+            # Extract the documents section and verify button is NOT there
+            documents_section = page.split('<section class="documents-section"', 1)[1].split("</section>", 1)[0]
+            self.assertNotIn('id="import-ai-thread-button"', documents_section)
+
+            # Extract the document dialog and then the AI fieldset
+            dialog = page.split('<dialog id="document-dialog">', 1)[1].split("</dialog>", 1)[0]
+            ai_fieldset = dialog.split('<fieldset class="document-type-fields" data-document-type="ai"', 1)[1].split("</fieldset>", 1)[0]
+            self.assertIn('id="import-ai-thread-button"', ai_fieldset)
+
+            # Verify button appears exactly once
+            self.assertEqual(page.count('id="import-ai-thread-button"'), 1)
+
+            # Script assertions
+            # Find the click listener and verify documentDialog.close() appears before aiShareDialog.showModal()
+            self.assertIn('importAiThreadButton.addEventListener("click"', script)
+            click_start = script.index('importAiThreadButton.addEventListener("click"')
+            click_end = script.index("\n});", click_start) + 4
+            click_handler = script[click_start:click_end]
+            self.assertIn("documentDialog.close();", click_handler)
+            self.assertIn("aiShareDialog.showModal();", click_handler)
+            self.assertLess(click_handler.index("documentDialog.close();"),
+                           click_handler.index("aiShareDialog.showModal();"))
+
+            # Verify hidden property is set in both cases
+            self.assertIn("importAiThreadButton.hidden = true", script)
+            self.assertIn("importAiThreadButton.hidden = false", script)
+
 
 if __name__ == "__main__":
     unittest.main()

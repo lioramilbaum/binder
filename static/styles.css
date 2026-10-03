@@ -193,6 +193,10 @@ input:focus, textarea:focus, select:focus { outline: 2px solid rgba(184, 76, 44,
 textarea { resize: vertical; }
 [hidden] { display: none !important; }
 .error { min-height: 1.2em; margin: 10px 0 0; color: #a2281c; font-size: .88rem; }
+.ai-import-action {
+  display: flex;
+  margin: 15px 0 0;
+}
 .document-type-fields { border: none; padding: 0; margin: 0; }
 .document-type-fields[disabled] { pointer-events: none; opacity: .6; }
 .document-type-badge { display: inline-block; padding: 2px 8px; background: var(--accent); color: white; border-radius: 12px; font-size: .75rem; font-weight: 700; margin-left: 8px; }
