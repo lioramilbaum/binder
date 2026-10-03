@@ -12,6 +12,7 @@ const documentSearch = document.querySelector("#document-search");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
+const importAiThreadButton = document.querySelector("#import-ai-thread-button");
 const aiShareDialog = document.querySelector("#ai-share-dialog");
 const documentTypeSelect = document.querySelector("#document-type");
 const aiShareForm = document.querySelector("#ai-share-form");
@@ -509,6 +510,7 @@ function renderDocuments(documents) {
       const docType = documentItem.type || "regular";
       documentTypeSelect.value = docType;
       documentTypeSelect.disabled = true;  // Type is immutable after creation
+      importAiThreadButton.hidden = true;
       applyDocumentType(docType);
 
       document.querySelector("#document-date").value = documentItem.date;
@@ -795,11 +797,13 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
   documentTypeSelect.value = "regular";
   documentTypeSelect.disabled = false;
   applyDocumentType("regular");
+  importAiThreadButton.hidden = false;
   documentDialog.showModal();
 });
 document.querySelector("#close-document-dialog").addEventListener("click", () => documentDialog.close());
 document.querySelector("#cancel-document-dialog").addEventListener("click", () => documentDialog.close());
-document.querySelector("#import-ai-thread-button").addEventListener("click", () => {
+importAiThreadButton.addEventListener("click", () => {
+  documentDialog.close();
   aiShareForm.reset();
   aiShareConfirmForm.reset();
   aiSharePreviewId = null;

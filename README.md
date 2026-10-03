@@ -70,8 +70,8 @@ the title, date, time, summary, and tags after creation. The transcript of manua
 conversations can also be edited.
 
 To import a public ChatGPT conversation, use ChatGPT's **Share** action and copy the
-`https://chatgpt.com/share/<id>` link. In Binder, choose **Import ChatGPT share link** in
-the Documents section, paste it, and preview the complete extracted text. Verify the title,
+`https://chatgpt.com/share/<id>` link. In Binder, click **New document**, set **Document type** to
+**AI**, then click **Import ChatGPT share link**, paste the link, and preview the complete extracted text. Verify the title,
 message count, transcript, and any omission warnings before saving. When the first visible
 message has a usable timestamp, Binder suggests its date and time in your local timezone;
 you can edit both. Otherwise, enter a date yourself and optionally a time. Binder saves the

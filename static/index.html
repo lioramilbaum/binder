@@ -50,7 +50,6 @@
             <h2 id="documents-heading">@@documents@@</h2>
             <div class="section-actions">
               <span id="document-count"></span>
-              <button class="secondary-button small-button" id="import-ai-thread-button" type="button">@@import_ai_thread@@</button>
               <button class="primary-button small-button" id="new-document-button" type="button">@@new_document@@</button>
             </div>
           </div>
@@ -167,6 +166,9 @@
           <textarea id="document-content" dir="auto" class="content-input" name="content" rows="10" placeholder="@@content_placeholder@@"></textarea>
         </fieldset>
         <fieldset class="document-type-fields" data-document-type="ai" hidden disabled>
+          <div class="ai-import-action">
+            <button class="secondary-button small-button" id="import-ai-thread-button" type="button">@@import_ai_thread@@</button>
+          </div>
           <label for="document-provider" data-for-type="ai">@@ai_thread_provider@@ <span>@@optional@@</span></label>
           <input id="document-provider" dir="auto" name="provider" maxlength="100" placeholder="@@ai_thread_provider_placeholder@@">
           <label for="document-transcript" data-for-type="ai">@@ai_thread_transcript@@</label>
