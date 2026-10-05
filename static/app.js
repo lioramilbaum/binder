@@ -513,23 +513,33 @@ function renderDocuments(documents) {
       importAiThreadButton.hidden = true;
       applyDocumentType(docType);
 
-      document.querySelector("#document-date").value = documentItem.date;
-      document.querySelector("#document-time").value = documentItem.time || "";
+      const dateInput = document.querySelector("#document-date");
+      const timeInput = document.querySelector("#document-time");
+      dateInput.value = documentItem.date;
+      timeInput.value = documentItem.time || "";
       document.querySelector("#document-name").value = documentItem.name;
 
       if (docType === "regular") {
+        dateInput.disabled = false;
+        timeInput.disabled = false;
         document.querySelector("#document-description").value = documentItem.description || "";
         document.querySelector("#document-content").value = documentItem.content || "";
       } else {
         // AI document
         document.querySelector("#document-provider").value = documentItem.provider || "";
         document.querySelector("#document-transcript").value = documentItem.content || "";
-        // Show locked hint if imported
+        // Lock date, time, and transcript for imported documents
         const lockedHint = document.querySelector("#imported-transcript-locked-hint");
         if (lockedHint) {
           lockedHint.hidden = !documentItem.source_url;
           if (documentItem.source_url) {
             document.querySelector("#document-transcript").disabled = true;
+            dateInput.disabled = true;
+            timeInput.disabled = true;
+          } else {
+            document.querySelector("#document-transcript").disabled = false;
+            dateInput.disabled = false;
+            timeInput.disabled = false;
           }
         }
       }
@@ -794,6 +804,8 @@ document.querySelector("#new-document-button").addEventListener("click", () => {
   renderTagEditor();
   loadTagSuggestions();
   document.querySelector("#document-date").value = new Date().toISOString().slice(0, 10);
+  document.querySelector("#document-date").disabled = false;
+  document.querySelector("#document-time").disabled = false;
   documentTypeSelect.value = "regular";
   documentTypeSelect.disabled = false;
   applyDocumentType("regular");
@@ -806,6 +818,8 @@ importAiThreadButton.addEventListener("click", () => {
   documentDialog.close();
   aiShareForm.reset();
   aiShareConfirmForm.reset();
+  document.querySelector("#ai-share-date").readOnly = false;
+  document.querySelector("#ai-share-time").readOnly = false;
   aiSharePreviewId = null;
   aiShareError.textContent = "";
   aiShareConfirmError.textContent = "";
@@ -850,8 +864,12 @@ aiShareForm.addEventListener("submit", async (event) => {
     ].filter(Boolean).join(" ");
     document.querySelector("#ai-share-transcript").textContent = result.transcript;
     const sourceDateTime = localDateTimeInputs(result.source_first_message_at);
-    document.querySelector("#ai-share-date").value = sourceDateTime?.date || "";
-    document.querySelector("#ai-share-time").value = sourceDateTime?.time || "";
+    const dateInput = document.querySelector("#ai-share-date");
+    const timeInput = document.querySelector("#ai-share-time");
+    dateInput.value = sourceDateTime?.date || "";
+    timeInput.value = sourceDateTime?.time || "";
+    dateInput.readOnly = !!sourceDateTime;
+    timeInput.readOnly = !!sourceDateTime;
     aiShareForm.hidden = true;
     aiShareConfirmForm.hidden = false;
   } catch {
@@ -959,7 +977,7 @@ documentForm.addEventListener("submit", async (event) => {
     const response = await fetch(url, {
       method: method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(Object.fromEntries(Object.entries(payload).filter(([, v]) => v !== null))),
     });
     const contentType = response.headers.get("Content-Type") || "";
     const result = contentType.includes("application/json")

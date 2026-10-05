@@ -108,7 +108,7 @@ button { cursor: pointer; }
 .document-item summary::-webkit-details-marker { display: none; }
 .document-item summary > span:first-child { display: grid; gap: 5px; }
 .document-item h3 { margin: 0; font-size: 1rem; }
-.document-item span { color: var(--muted); font-size: .8rem; }
+.document-item span:not(.document-type-badge) { color: var(--muted); font-size: .8rem; }
 .document-marker { font-size: 1.2rem !important; transition: transform .15s; }
 .document-item[open] .document-marker { transform: rotate(180deg); }
 .document-body { padding: 0 22px 22px; border-top: 1px solid var(--line); }
@@ -190,6 +190,7 @@ label span { color: var(--muted); font-size: .8rem; font-weight: 400; }
 .date-time-fields > div { display: grid; }
 input, textarea, select { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
 input:focus, textarea:focus, select:focus { outline: 2px solid rgba(184, 76, 44, .25); border-color: var(--accent); }
+input[readonly], textarea[readonly] { background: var(--paper); color: var(--muted); cursor: default; }
 textarea { resize: vertical; }
 [hidden] { display: none !important; }
 .error { min-height: 1.2em; margin: 10px 0 0; color: #a2281c; font-size: .88rem; }
