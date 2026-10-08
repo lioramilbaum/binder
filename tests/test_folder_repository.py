@@ -342,6 +342,221 @@ class FolderRepositoryTests(unittest.TestCase):
         self.assertEqual(doc["tags"], ["Important"])
 
 
+class DocumentLinkRepositoryTests(unittest.TestCase):
+    """Tests for document links."""
+
+    def setUp(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        self.factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def test_link_types_start_empty_and_grow(self):
+        empty = folder_repository.list_link_types(self.factory)
+        self.assertEqual(empty, [])
+
+        link_type1, created1 = folder_repository.create_link_type(self.factory, "Reply to")
+        self.assertTrue(created1)
+
+        link_type2, created2 = folder_repository.create_link_type(self.factory, "  reply   TO ")
+        self.assertEqual(link_type1["id"], link_type2["id"])
+        self.assertFalse(created2)
+
+        types = folder_repository.list_link_types(self.factory)
+        self.assertEqual(len(types), 1)
+        self.assertEqual(types[0]["name"], "Reply to")
+
+    def test_link_is_visible_from_both_documents(self):
+        folder = folder_repository.create_folder(self.factory, "Test")
+        docA = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "Doc A")
+        docB = folder_repository.create_document(self.factory, folder["id"], "2026-10-02", "Doc B")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        result = folder_repository.add_document_link(
+            self.factory, folder["id"], docA["id"], docB["id"], link_type["id"]
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("links", result)
+
+        # Reload to verify persistence
+        reloaded = folder_repository.get_folder(self.factory, folder["id"])
+        docs = {doc["id"]: doc for doc in reloaded["documents"]}
+
+        # Check A has outgoing link to B
+        self.assertEqual(len(docs[docA["id"]]["links"]), 1)
+        link = docs[docA["id"]]["links"][0]
+        self.assertEqual(link["direction"], "outgoing")
+        self.assertEqual(link["document"]["id"], docB["id"])
+        self.assertEqual(link["type"], "Reply to")
+
+        # Check B has incoming link from A
+        self.assertEqual(len(docs[docB["id"]]["links"]), 1)
+        link = docs[docB["id"]]["links"][0]
+        self.assertEqual(link["direction"], "incoming")
+        self.assertEqual(link["document"]["id"], docA["id"])
+
+    def test_cross_folder_link_reports_target_folder(self):
+        folder1 = folder_repository.create_folder(self.factory, "Folder 1")
+        folder2 = folder_repository.create_folder(self.factory, "Folder 2")
+        docA = folder_repository.create_document(self.factory, folder1["id"], "2026-10-01", "Doc A")
+        docB = folder_repository.create_document(self.factory, folder2["id"], "2026-10-02", "Doc B")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        folder_repository.add_document_link(
+            self.factory, folder1["id"], docA["id"], docB["id"], link_type["id"]
+        )
+
+        reloaded = folder_repository.get_folder(self.factory, folder1["id"])
+        docA_reloaded = reloaded["documents"][0]
+
+        link = docA_reloaded["links"][0]
+        self.assertEqual(link["document"]["folder_id"], folder2["id"])
+        self.assertEqual(link["document"]["folder_name"], "Folder 2")
+
+    def test_rejects_self_missing_target_and_missing_type(self):
+        folder = folder_repository.create_folder(self.factory, "Test")
+        doc = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "Doc")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        # Self link
+        with self.assertRaises(folder_repository.LinkError) as ctx:
+            folder_repository.add_document_link(
+                self.factory, folder["id"], doc["id"], doc["id"], link_type["id"]
+            )
+        self.assertEqual(ctx.exception.code, "self_link")
+
+        # Missing target
+        with self.assertRaises(folder_repository.LinkError) as ctx:
+            folder_repository.add_document_link(
+                self.factory, folder["id"], doc["id"], "missing", link_type["id"]
+            )
+        self.assertEqual(ctx.exception.code, "target_not_found")
+
+        # Missing link type
+        with self.assertRaises(folder_repository.LinkError) as ctx:
+            doc2 = folder_repository.create_document(self.factory, folder["id"], "2026-10-02", "Doc 2")
+            folder_repository.add_document_link(
+                self.factory, folder["id"], doc["id"], doc2["id"], "missing_type"
+            )
+        self.assertEqual(ctx.exception.code, "link_type_not_found")
+
+    def test_rejects_duplicate_in_either_direction(self):
+        folder = folder_repository.create_folder(self.factory, "Test")
+        docA = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "Doc A")
+        docB = folder_repository.create_document(self.factory, folder["id"], "2026-10-02", "Doc B")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        # Create A -> B
+        folder_repository.add_document_link(
+            self.factory, folder["id"], docA["id"], docB["id"], link_type["id"]
+        )
+
+        # Try A -> B again
+        with self.assertRaises(folder_repository.LinkError) as ctx:
+            folder_repository.add_document_link(
+                self.factory, folder["id"], docA["id"], docB["id"], link_type["id"]
+            )
+        self.assertEqual(ctx.exception.code, "duplicate_link")
+
+        # Try B -> A with same type
+        with self.assertRaises(folder_repository.LinkError) as ctx:
+            folder_repository.add_document_link(
+                self.factory, folder["id"], docB["id"], docA["id"], link_type["id"]
+            )
+        self.assertEqual(ctx.exception.code, "duplicate_link")
+
+        # Different type should succeed
+        link_type2, _ = folder_repository.create_link_type(self.factory, "Related to")
+        result = folder_repository.add_document_link(
+            self.factory, folder["id"], docB["id"], docA["id"], link_type2["id"]
+        )
+        self.assertIsNotNone(result)
+
+    def test_add_link_to_missing_source_returns_none(self):
+        folder = folder_repository.create_folder(self.factory, "Test")
+        doc = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "Doc")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        result = folder_repository.add_document_link(
+            self.factory, folder["id"], "missing", doc["id"], link_type["id"]
+        )
+        self.assertIsNone(result)
+
+    def test_remove_link_from_either_end(self):
+        folder = folder_repository.create_folder(self.factory, "Test")
+        docA = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "Doc A")
+        docB = folder_repository.create_document(self.factory, folder["id"], "2026-10-02", "Doc B")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+
+        result = folder_repository.add_document_link(
+            self.factory, folder["id"], docA["id"], docB["id"], link_type["id"]
+        )
+        link_id = result["links"][0]["id"]
+
+        # Remove via B
+        result_b = folder_repository.remove_document_link(
+            self.factory, folder["id"], docB["id"], link_id
+        )
+        self.assertIsNotNone(result_b)
+        self.assertEqual(len(result_b.get("links", [])), 0)
+
+        # Verify A also has no links
+        result_a = folder_repository.get_folder(self.factory, folder["id"])
+        doc_a = [d for d in result_a["documents"] if d["id"] == docA["id"]][0]
+        self.assertEqual(len(doc_a.get("links", [])), 0)
+
+        # Unknown link_id returns None
+        result = folder_repository.remove_document_link(
+            self.factory, folder["id"], docA["id"], "unknown"
+        )
+        self.assertIsNone(result)
+
+        # Wrong doc id returns None
+        docC = folder_repository.create_document(self.factory, folder["id"], "2026-10-03", "Doc C")
+        result = folder_repository.remove_document_link(
+            self.factory, folder["id"], docC["id"], link_id
+        )
+        self.assertIsNone(result)
+
+class DocumentLinksMigrationTests(unittest.TestCase):
+    """Tests for the document links migration."""
+
+    def test_migration_creates_tables_and_indexes(self):
+        path = Path(__file__).resolve().parents[1] / "migrations/versions/20261008_09_add_document_links.py"
+        spec = importlib.util.spec_from_file_location("links_migration", path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        self.assertEqual(migration.revision, "20261008_09")
+        self.assertEqual(migration.down_revision, "20260930_08")
+
+        engine = create_engine("sqlite:///:memory:")
+        with engine.begin() as connection:
+            # Create minimal schema for migration
+            connection.execute(text("CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"))
+            connection.execute(text("CREATE TABLE documents (id TEXT PRIMARY KEY, folder_id TEXT NOT NULL, type TEXT NOT NULL, date TEXT NOT NULL, time TEXT, name TEXT NOT NULL, description TEXT NOT NULL, content TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, whatsapp_chat TEXT, whatsapp_chat_file_id TEXT, provider TEXT, source_url TEXT, imported_at TEXT, transcript_sha256 TEXT, source_first_message_at TEXT, FOREIGN KEY (folder_id) REFERENCES folders(id))"))
+
+            # Run upgrade
+            operations = Operations(MigrationContext.configure(connection))
+            with patch.object(migration, "op", operations):
+                migration.upgrade()
+
+            # Verify tables exist
+            result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('link_types', 'document_links')"))
+            tables = [row[0] for row in result]
+            self.assertIn("link_types", tables)
+            self.assertIn("document_links", tables)
+
+            # Run downgrade
+            with patch.object(migration, "op", operations):
+                migration.downgrade()
+
+            # Verify tables are gone
+            result = connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('link_types', 'document_links')"))
+            tables = [row[0] for row in result]
+            self.assertEqual(len(tables), 0)
+
+
 class DocumentTypeMigrationTests(unittest.TestCase):
     """Tests for the ai_threads to documents migration."""
 

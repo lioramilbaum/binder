@@ -128,6 +128,29 @@ class I18nTests(unittest.TestCase):
             self.assertIn("importAiThreadButton.hidden = true", script)
             self.assertIn("importAiThreadButton.hidden = false", script)
 
+    def test_link_dialog_and_backlinks_markup(self):
+        for locale in ("he", "en"):
+            page = _get("/", locale)
+            script = _get("/app.js", locale)
+
+            # Check for link dialog element
+            self.assertIn('<dialog id="link-dialog" aria-labelledby="link-dialog-heading">', page)
+
+            # Check for link-type-select with placeholder option
+            self.assertIn('id="link-type-select"', page)
+            link_dialog_section = page.split('<dialog id="link-dialog"', 1)[1].split("</dialog>", 1)[0]
+            # The placeholder option should be there with an empty value
+            self.assertIn('<option value="">', link_dialog_section)
+
+            # Check for other link dialog elements
+            self.assertIn('id="new-link-type-input"', page)
+            self.assertIn('id="link-target-select"', page)
+
+            # Check for link functions in app.js
+            self.assertIn("/api/link-types", script)
+            self.assertIn("function renderDocumentLinks(", script)
+            self.assertIn("function revealDocument(", script)
+
 
 if __name__ == "__main__":
     unittest.main()

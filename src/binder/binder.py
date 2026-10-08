@@ -24,11 +24,11 @@ from .config import (
     STATIC_DIR,
 )
 from .folders import Folders
-from .folder_repository import DocumentRuleError
+from .folder_repository import DocumentRuleError, LinkError, create_link_type, add_document_link, remove_document_link
 from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .i18n import Translator
-from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags
-from .models import DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI, DOCUMENT_TYPES, MAX_SUMMARY_LENGTH
+from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags, normalize_tag
+from .models import DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI, DOCUMENT_TYPES, MAX_SUMMARY_LENGTH, MAX_LINK_TYPE_LENGTH
 
 
 class _SharePreviewCache:
@@ -104,6 +104,9 @@ class Binder(BaseHTTPRequestHandler):
         if path == "/api/tags":
             self._send_json(self.store.tags())
             return
+        if path == "/api/link-types":
+            self._send_json(self.store.link_types())
+            return
         if path == "/api/folders":
             self._send_json(self.store.list())
             return
@@ -147,12 +150,14 @@ class Binder(BaseHTTPRequestHandler):
         is_document_request = path.startswith("/api/folders/") and path.endswith(
             "/documents"
         )
+        is_link_types_request = path == "/api/link-types"
+        link_match = re.fullmatch(r"/api/folders/([^/]+)/documents/([^/]+)/links", path)
         # Return 404 for deprecated /ai-threads endpoint
         if bool(re.fullmatch(r"/api/folders/[^/]+/ai-threads", path)):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         share_match = re.fullmatch(r"/api/folders/([^/]+)/documents/share-(preview|confirm)", path)
-        if not is_folder_request and not is_document_request and not share_match:
+        if not is_folder_request and not is_document_request and not is_link_types_request and not link_match and not share_match:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
@@ -171,6 +176,12 @@ class Binder(BaseHTTPRequestHandler):
 
         if is_document_request:
             self._create_document(path, payload)
+            return
+        if is_link_types_request:
+            self._create_link_type(payload)
+            return
+        if link_match:
+            self._create_link(link_match.group(1), link_match.group(2), payload)
             return
         if share_match:
             if share_match.group(2) == "preview":
@@ -349,6 +360,21 @@ class Binder(BaseHTTPRequestHandler):
 
     def do_DELETE(self) -> None:
         path = urlparse(self.path).path
+        parts = path.strip("/").split("/")
+
+        # Check if this is a link deletion (7 parts: api/folders/{folder_id}/documents/{document_id}/links/{link_id})
+        if len(parts) == 7 and parts[:2] == ["api", "folders"] and parts[3] == "documents" and parts[5] == "links":
+            folder_id = parts[2]
+            document_id = parts[4]
+            link_id = parts[6]
+            document = remove_document_link(self.store.factory, folder_id, document_id, link_id)
+            if document is None:
+                self._send_json({"error": "link_not_found"}, HTTPStatus.NOT_FOUND)
+                return
+            self._send_json(document, HTTPStatus.OK)
+            return
+
+        # Otherwise, handle as file deletion
         attachment_parts = self._attachment_parts(path)
         if attachment_parts is None:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -430,6 +456,57 @@ class Binder(BaseHTTPRequestHandler):
         if document is None:
             self._send_json({"error": "התיקייה לא נמצאה"}, HTTPStatus.NOT_FOUND)
             return
+        self._send_json(document, HTTPStatus.CREATED)
+
+    def _create_link_type(self, payload: dict[str, object]) -> None:
+        """Create a link type. Returns 201 if created, 200 if existing."""
+        if not isinstance(payload.get("name"), str):
+            self._send_json({"error": "invalid_link_type"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        name = str(payload.get("name", "")).strip()
+        normalized = normalize_tag(name)
+
+        if not normalized or len(normalized) > MAX_LINK_TYPE_LENGTH:
+            self._send_json({"error": "invalid_link_type"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            link_type, created = create_link_type(self.store.factory, name)
+        except ValueError:
+            self._send_json({"error": "invalid_link_type"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        status = HTTPStatus.CREATED if created else HTTPStatus.OK
+        self._send_json(link_type, status)
+
+    def _create_link(self, folder_id: str, document_id: str, payload: dict[str, object]) -> None:
+        """Create a document link."""
+        target_document_id = payload.get("target_document_id", "")
+        link_type_id = payload.get("link_type_id", "")
+
+        if not isinstance(target_document_id, str) or not target_document_id:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        if not isinstance(link_type_id, str) or not link_type_id:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+
+        try:
+            document = add_document_link(
+                self.store.factory, folder_id, document_id, target_document_id, link_type_id
+            )
+        except LinkError as exc:
+            if exc.code == "duplicate_link":
+                self._send_json({"error": exc.code}, HTTPStatus.CONFLICT)
+            else:
+                self._send_json({"error": exc.code}, HTTPStatus.BAD_REQUEST)
+            return
+
+        if document is None:
+            self._send_json({"error": "document_not_found"}, HTTPStatus.NOT_FOUND)
+            return
+
         self._send_json(document, HTTPStatus.CREATED)
 
     def _upload_files(self, folder_id: str, document_id: str) -> None:

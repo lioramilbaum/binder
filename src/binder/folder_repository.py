@@ -20,7 +20,9 @@ from .models import (
     MAX_TRANSCRIPT_LENGTH,
     Document,
     DocumentFile,
+    DocumentLink,
     Folder,
+    LinkType,
     Tag,
 )
 from .tags import normalize_tags, tag_key
@@ -30,6 +32,13 @@ from .whatsapp import WhatsAppChat
 class DocumentRuleError(ValueError):
     """Raised when a document operation violates business rules."""
     pass
+
+
+class LinkError(ValueError):
+    """Raised when a document link operation fails."""
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 def _now() -> str:
@@ -129,6 +138,15 @@ def _document_to_dict(document: Document) -> dict[str, object]:
         if document.source_first_message_at:
             result["source_first_message_at"] = document.source_first_message_at
 
+    # Add links
+    links = []
+    for link in document.outgoing_links:
+        links.append(_link_to_dict(link, "outgoing"))
+    for link in document.incoming_links:
+        links.append(_link_to_dict(link, "incoming"))
+    if links:
+        result["links"] = links
+
     return result
 
 
@@ -172,6 +190,28 @@ def get_folder(factory: sessionmaker[Session], folder_id: str) -> dict[str, obje
             .options(
                 selectinload(Folder.documents)
                 .selectinload(Document.tags)
+            )
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.target)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.link_type)
+            )
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.source)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Folder.documents)
+                .selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.link_type)
             )
             .filter(Folder.id == folder_id)
             .one_or_none()
@@ -263,6 +303,33 @@ def create_document(
         document.tags = _resolve_tags(session, list(tags))
         folder.updated_at = now
         session.flush()
+        # Reload document with eager-loaded relationships to avoid N+1 queries
+        document = (
+            session.query(Document)
+            .options(selectinload(Document.folder))
+            .options(
+                selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.target)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.link_type)
+            )
+            .options(
+                selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.source)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.link_type)
+            )
+            .options(selectinload(Document.files))
+            .options(selectinload(Document.tags))
+            .filter(Document.id == document.id)
+            .one()
+        )
         return _document_to_dict(document)
 
 
@@ -280,8 +347,27 @@ def update_document(
     with session_scope(factory) as session:
         document = (
             session.query(Document)
+            .options(selectinload(Document.folder))
             .options(selectinload(Document.files))
             .options(selectinload(Document.tags))
+            .options(
+                selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.target)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Document.outgoing_links)
+                .selectinload(DocumentLink.link_type)
+            )
+            .options(
+                selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.source)
+                .selectinload(Document.folder)
+            )
+            .options(
+                selectinload(Document.incoming_links)
+                .selectinload(DocumentLink.link_type)
+            )
             .filter(Document.id == document_id, Document.folder_id == folder_id)
             .one_or_none()
         )
@@ -538,3 +624,247 @@ def list_tags(factory: sessionmaker[Session]) -> list[dict[str, object]]:
             {"name": row[0], "document_count": row[1]}
             for row in rows
         ]
+
+
+def _link_to_dict(link: DocumentLink, direction: str) -> dict[str, object]:
+    """Convert a document link to a dict, including the document at the other end."""
+    # Determine which document is at the other end
+    if direction == "outgoing":
+        other_doc = link.target
+    else:  # direction == "incoming"
+        other_doc = link.source
+
+    return {
+        "id": link.id,
+        "direction": direction,
+        "type_id": link.link_type_id,
+        "type": link.link_type.name,
+        "created_at": link.created_at,
+        "document": {
+            "id": other_doc.id,
+            "name": other_doc.name,
+            "date": other_doc.date,
+            "type": other_doc.type,
+            "folder_id": other_doc.folder_id,
+            "folder_name": other_doc.folder.name,
+        },
+    }
+
+
+def list_link_types(factory: sessionmaker[Session]) -> list[dict[str, object]]:
+    """Return all link types, sorted by key."""
+
+    with factory() as session:
+        link_types = session.query(LinkType).order_by(LinkType.key).all()
+        return [
+            {"id": lt.id, "name": lt.name}
+            for lt in link_types
+        ]
+
+
+def create_link_type(factory: sessionmaker[Session], name: str) -> tuple[dict[str, object], bool]:
+    """Create a link type or return existing by key.
+
+    Returns (link_type_dict, created) where created is True if new.
+    Raises ValueError if the normalized name is empty.
+    """
+    from .tags import normalize_tag, tag_key
+
+    normalized = normalize_tag(name)
+    if not normalized:
+        raise ValueError("invalid_link_type")
+
+    key = tag_key(normalized)
+    now = _now()
+
+    with session_scope(factory) as session:
+        # Try to get existing
+        existing = session.query(LinkType).filter_by(key=key).one_or_none()
+        if existing is not None:
+            return {"id": existing.id, "name": existing.name}, False
+
+        # Create new
+        try:
+            with session.begin_nested():
+                link_type = LinkType(
+                    id=str(uuid4()),
+                    name=normalized,
+                    key=key,
+                    created_at=now,
+                )
+                session.add(link_type)
+            session.flush()
+            return {"id": link_type.id, "name": link_type.name}, True
+        except IntegrityError:
+            # Another concurrent request created this type; fetch it
+            link_type = session.query(LinkType).filter_by(key=key).one()
+            return {"id": link_type.id, "name": link_type.name}, False
+
+
+def add_document_link(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    document_id: str,
+    target_document_id: str,
+    link_type_id: str,
+) -> dict[str, object] | None:
+    """Add a link from a document to another, or return None if source not in folder.
+
+    Raises LinkError for validation failures.
+    """
+
+    with session_scope(factory) as session:
+        # Load source document scoped to folder
+        source = (
+            session.query(Document)
+            .options(
+                selectinload(Document.folder),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.target),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.source),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.files),
+                selectinload(Document.tags),
+            )
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if source is None:
+            return None
+
+        # Check for self-link
+        if document_id == target_document_id:
+            raise LinkError("self_link")
+
+        # Check target exists
+        target = session.get(Document, target_document_id)
+        if target is None:
+            raise LinkError("target_not_found")
+
+        # Check link type exists
+        link_type = session.get(LinkType, link_type_id)
+        if link_type is None:
+            raise LinkError("link_type_not_found")
+
+        # Check for duplicate link in either direction
+        # Same-direction duplicate
+        existing = (
+            session.query(DocumentLink)
+            .filter(
+                DocumentLink.source_document_id == document_id,
+                DocumentLink.target_document_id == target_document_id,
+                DocumentLink.link_type_id == link_type_id,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            raise LinkError("duplicate_link")
+
+        # Reverse-direction duplicate
+        existing = (
+            session.query(DocumentLink)
+            .filter(
+                DocumentLink.source_document_id == target_document_id,
+                DocumentLink.target_document_id == document_id,
+                DocumentLink.link_type_id == link_type_id,
+            )
+            .one_or_none()
+        )
+        if existing is not None:
+            raise LinkError("duplicate_link")
+
+        # Create link with user-supplied direction
+        try:
+            link = DocumentLink(
+                id=str(uuid4()),
+                source_document_id=document_id,
+                target_document_id=target_document_id,
+                link_type_id=link_type_id,
+                created_at=_now(),
+            )
+            session.add(link)
+            session.flush()
+        except IntegrityError:
+            raise LinkError("duplicate_link")
+
+        # Reload the source document to get fresh relationship data
+        session.expunge(source)
+        source = (
+            session.query(Document)
+            .options(
+                selectinload(Document.folder),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.target),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.source),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.files),
+                selectinload(Document.tags),
+            )
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one()
+        )
+
+        return _document_to_dict(source)
+
+
+def remove_document_link(
+    factory: sessionmaker[Session],
+    folder_id: str,
+    document_id: str,
+    link_id: str,
+) -> dict[str, object] | None:
+    """Remove a link from either end. Returns None if document or link not found."""
+
+    with session_scope(factory) as session:
+        # Load document scoped to folder
+        document = (
+            session.query(Document)
+            .options(
+                selectinload(Document.folder),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.target),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.source),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.files),
+                selectinload(Document.tags),
+            )
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return None
+
+        # Find link where source or target is this document
+        link = (
+            session.query(DocumentLink)
+            .filter(
+                DocumentLink.id == link_id,
+                (DocumentLink.source_document_id == document_id)
+                | (DocumentLink.target_document_id == document_id),
+            )
+            .one_or_none()
+        )
+        if link is None:
+            return None
+
+        session.delete(link)
+        session.flush()
+
+        # Reload the document to get fresh relationship data
+        session.expunge(document)
+        document = (
+            session.query(Document)
+            .options(
+                selectinload(Document.folder),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.target),
+                selectinload(Document.outgoing_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.source),
+                selectinload(Document.incoming_links).selectinload(DocumentLink.link_type),
+                selectinload(Document.files),
+                selectinload(Document.tags),
+            )
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one()
+        )
+
+        return _document_to_dict(document)

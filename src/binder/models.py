@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, Column, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import JSON, CheckConstraint, Column, ForeignKey, Integer, String, Table, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -18,6 +18,7 @@ DOCUMENT_TYPES = {DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI}
 MAX_SUMMARY_LENGTH = {"regular": 1000, "ai": 10_000}
 MAX_TRANSCRIPT_LENGTH = 200_000
 MAX_PROVIDER_LENGTH = 100
+MAX_LINK_TYPE_LENGTH = 50
 
 
 document_tags = Table(
@@ -79,6 +80,20 @@ class Document(Base):
     tags: Mapped[list["Tag"]] = relationship(
         secondary=document_tags, back_populates="documents", order_by="Tag.key"
     )
+    outgoing_links: Mapped[list["DocumentLink"]] = relationship(
+        back_populates="source",
+        foreign_keys="DocumentLink.source_document_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DocumentLink.created_at",
+    )
+    incoming_links: Mapped[list["DocumentLink"]] = relationship(
+        back_populates="target",
+        foreign_keys="DocumentLink.target_document_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="DocumentLink.created_at",
+    )
 
 
 class DocumentFile(Base):
@@ -121,3 +136,51 @@ class Tag(Base):
     documents: Mapped[list["Document"]] = relationship(
         secondary=document_tags, back_populates="tags"
     )
+
+
+class LinkType(Base):
+    """A global link type that can connect documents."""
+
+    __tablename__ = "link_types"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class DocumentLink(Base):
+    """A link between two documents of a specific type."""
+
+    __tablename__ = "document_links"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    source_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    target_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    link_type_id: Mapped[str] = mapped_column(ForeignKey("link_types.id"), index=True)
+    created_at: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "source_document_id <> target_document_id",
+            name="ck_document_links_not_self",
+        ),
+        UniqueConstraint(
+            "source_document_id",
+            "target_document_id",
+            "link_type_id",
+            name="uq_document_links_source_target_type",
+        ),
+    )
+
+    source: Mapped[Document] = relationship(
+        back_populates="outgoing_links", foreign_keys=[source_document_id]
+    )
+    target: Mapped[Document] = relationship(
+        back_populates="incoming_links", foreign_keys=[target_document_id]
+    )
+    link_type: Mapped[LinkType] = relationship()

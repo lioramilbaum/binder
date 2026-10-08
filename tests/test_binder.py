@@ -394,6 +394,157 @@ class BinderCreateAiDocumentTests(unittest.TestCase):
         self.assertEqual(handler._send_json.call_args.args[1], 400)
 
 
+class BinderLinkTests(unittest.TestCase):
+    def post(self, path, payload=None):
+        handler = object.__new__(Binder)
+        handler.path = path
+        handler.rfile = io.BytesIO(json.dumps(payload or {}).encode())
+        handler.headers = {"Content-Length": str(len(json.dumps(payload or {}).encode()))}
+        handler.store = Mock()
+        handler._send_json = Mock()
+        handler.send_error = Mock()
+        handler.do_POST()
+        return handler
+
+    def delete(self, path):
+        handler = object.__new__(Binder)
+        handler.path = path
+        handler.store = Mock()
+        handler._send_json = Mock()
+        handler.send_error = Mock()
+        handler.do_DELETE()
+        return handler
+
+    def test_get_link_types(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/link-types"
+        handler.store = Mock()
+        handler.store.link_types.return_value = [
+            {"id": "1", "name": "Reply to"},
+            {"id": "2", "name": "Related to"},
+        ]
+        handler._send_json = Mock()
+        handler.do_GET()
+        handler.store.link_types.assert_called_once()
+        handler._send_json.assert_called_once_with(
+            [
+                {"id": "1", "name": "Reply to"},
+                {"id": "2", "name": "Related to"},
+            ]
+        )
+
+    def test_post_link_types_returns_201_when_created(self):
+        with patch("binder.binder.create_link_type") as mock_create:
+            mock_create.return_value = ({"id": "1", "name": "Reply to"}, True)
+            handler = self.post("/api/link-types", {"name": "Reply to"})
+            self.assertEqual(handler._send_json.call_args.args[1], 201)
+
+    def test_post_link_types_returns_200_when_existing(self):
+        with patch("binder.binder.create_link_type") as mock_create:
+            mock_create.return_value = ({"id": "1", "name": "Reply to"}, False)
+            handler = self.post("/api/link-types", {"name": "Reply to"})
+            self.assertEqual(handler._send_json.call_args.args[1], 200)
+
+    def test_post_link_types_rejects_empty_name(self):
+        handler = self.post("/api/link-types", {"name": ""})
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+        self.assertEqual(handler._send_json.call_args.args[0], {"error": "invalid_link_type"})
+
+    def test_post_link_types_rejects_missing_name(self):
+        handler = self.post("/api/link-types", {})
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_post_link_types_rejects_non_string_name(self):
+        handler = self.post("/api/link-types", {"name": 123})
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_post_link_types_rejects_too_long_name(self):
+        handler = self.post("/api/link-types", {"name": "x" * 51})
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_create_link_calls_store_add_link(self):
+        with patch("binder.binder.add_document_link") as mock_add:
+            mock_add.return_value = {"id": "doc1"}
+            handler = self.post(
+                "/api/folders/folder1/documents/doc1/links",
+                {"target_document_id": "doc2", "link_type_id": "type1"}
+            )
+            self.assertEqual(handler._send_json.call_args.args[1], 201)
+
+    def test_create_link_rejects_missing_target(self):
+        handler = self.post(
+            "/api/folders/folder1/documents/doc1/links",
+            {"link_type_id": "type1"}
+        )
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+        self.assertEqual(handler._send_json.call_args.args[0], {"error": "invalid_request"})
+
+    def test_create_link_rejects_empty_target(self):
+        handler = self.post(
+            "/api/folders/folder1/documents/doc1/links",
+            {"target_document_id": "", "link_type_id": "type1"}
+        )
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_create_link_rejects_missing_type(self):
+        handler = self.post(
+            "/api/folders/folder1/documents/doc1/links",
+            {"target_document_id": "doc2"}
+        )
+        self.assertEqual(handler._send_json.call_args.args[1], 400)
+
+    def test_create_link_returns_404_when_document_not_found(self):
+        with patch("binder.binder.add_document_link") as mock_add:
+            mock_add.return_value = None
+            handler = self.post(
+                "/api/folders/folder1/documents/doc1/links",
+                {"target_document_id": "doc2", "link_type_id": "type1"}
+            )
+            self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+    def test_create_link_returns_409_for_duplicate(self):
+        from binder.folder_repository import LinkError
+        with patch("binder.binder.add_document_link") as mock_add:
+            mock_add.side_effect = LinkError("duplicate_link")
+            handler = self.post(
+                "/api/folders/folder1/documents/doc1/links",
+                {"target_document_id": "doc2", "link_type_id": "type1"}
+            )
+            self.assertEqual(handler._send_json.call_args.args[1], 409)
+
+    def test_create_link_returns_400_for_other_link_errors(self):
+        from binder.folder_repository import LinkError
+        with patch("binder.binder.add_document_link") as mock_add:
+            mock_add.side_effect = LinkError("self_link")
+            handler = self.post(
+                "/api/folders/folder1/documents/doc1/links",
+                {"target_document_id": "doc2", "link_type_id": "type1"}
+            )
+            self.assertEqual(handler._send_json.call_args.args[1], 400)
+            self.assertEqual(handler._send_json.call_args.args[0], {"error": "self_link"})
+
+    def test_delete_link_returns_404_when_not_found(self):
+        with patch("binder.binder.remove_document_link") as mock_remove:
+            mock_remove.return_value = None
+            handler = self.delete("/api/folders/folder1/documents/doc1/links/link1")
+            self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+    def test_delete_link_returns_200_on_success(self):
+        with patch("binder.binder.remove_document_link") as mock_remove:
+            mock_remove.return_value = {"id": "doc1"}
+            handler = self.delete("/api/folders/folder1/documents/doc1/links/link1")
+            self.assertEqual(handler._send_json.call_args.args[1], 200)
+
+    def test_delete_file_still_works_for_7_part_paths_with_files(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder1/documents/doc1/files/file1"
+        handler.store = Mock()
+        handler._send_json = Mock()
+        handler.send_error = Mock()
+        handler.do_DELETE()
+        handler.store.remove_file.assert_called_once_with("folder1", "doc1", "file1")
+
+
 class BinderTagsTests(unittest.TestCase):
     def test_get_tags_returns_list(self):
         handler = object.__new__(Binder)

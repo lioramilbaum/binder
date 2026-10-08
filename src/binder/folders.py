@@ -77,3 +77,20 @@ class Folders:
 
     def tags(self) -> list[dict[str, object]]:
         return folder_repository.list_tags(self.factory)
+
+    def link_types(self) -> list[dict[str, object]]:
+        return folder_repository.list_link_types(self.factory)
+
+    def create_link_type(self, name: str) -> dict[str, object]:
+        link_type, _ = folder_repository.create_link_type(self.factory, name)
+        return link_type
+
+    def add_link(
+        self, folder_id: str, document_id: str, target_document_id: str, link_type_id: str
+    ) -> Optional[dict[str, object]]:
+        return folder_repository.add_document_link(
+            self.factory, folder_id, document_id, target_document_id, link_type_id
+        )
+
+    def remove_link(self, folder_id: str, document_id: str, link_id: str) -> Optional[dict[str, object]]:
+        return folder_repository.remove_document_link(self.factory, folder_id, document_id, link_id)

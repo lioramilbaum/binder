@@ -202,6 +202,36 @@
       </form>
     </dialog>
 
+    <dialog id="link-dialog" aria-labelledby="link-dialog-heading">
+      <form id="link-form">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">@@documents@@</p>
+            <h2 id="link-dialog-heading">@@link_dialog_title@@</h2>
+          </div>
+          <button class="icon-button" id="close-link-dialog" type="button" aria-label="@@close@@">×</button>
+        </div>
+        <label for="link-type-select">@@link_type@@</label>
+        <select id="link-type-select" name="link_type_id" required>
+          <option value="">@@choose_link_type@@</option>
+        </select>
+        <p id="link-types-empty-hint" class="field-hint" hidden>@@no_link_types_hint@@</p>
+        <div class="new-link-type-row">
+          <input id="new-link-type-input" dir="auto" maxlength="50" autocomplete="off" placeholder="@@new_link_type_placeholder@@">
+          <button class="secondary-button small-button" id="add-link-type-button" type="button">@@add_link_type@@</button>
+        </div>
+        <label for="link-target-select">@@link_target@@</label>
+        <select id="link-target-select" name="target_document_id" required>
+          <option value="">@@choose_link_target@@</option>
+        </select>
+        <p id="link-form-error" class="error" role="alert"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-link-dialog" type="button">@@cancel@@</button>
+          <button class="primary-button" type="submit">@@save_link@@</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="/app.js" defer></script>
   </body>
 </html>

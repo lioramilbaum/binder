@@ -31,7 +31,27 @@ const shareErrors = {
   folder_not_found: @@share_folder_not_found@@,
   invalid_request: @@share_invalid_request@@,
 };
+const linkDialog = document.querySelector("#link-dialog");
+const linkForm = document.querySelector("#link-form");
+const linkTypeSelect = document.querySelector("#link-type-select");
+const linkTypesEmptyHint = document.querySelector("#link-types-empty-hint");
+const newLinkTypeInput = document.querySelector("#new-link-type-input");
+const addLinkTypeButton = document.querySelector("#add-link-type-button");
+const linkTargetSelect = document.querySelector("#link-target-select");
+const linkFormError = document.querySelector("#link-form-error");
+const closeLinkDialogButton = document.querySelector("#close-link-dialog");
+const cancelLinkDialogButton = document.querySelector("#cancel-link-dialog");
+const linkErrors = {
+  duplicate_link: @@link_error_duplicate@@,
+  self_link: @@link_error_self@@,
+  target_not_found: @@link_error_target_not_found@@,
+  link_type_not_found: @@link_error_type_not_found@@,
+  invalid_link_type: @@link_error_invalid_type@@,
+  document_not_found: @@link_error_document_not_found@@,
+  invalid_request: @@link_error_invalid_type@@,
+};
 let currentFolderId = null;
+let linkSourceDocumentId = null;
 let currentDocumentId = null;
 let currentDocuments = [];
 let documentTags = [];
@@ -556,6 +576,15 @@ function renderDocuments(documents) {
 
     editActions.append(editButton);
 
+    const linkButton = document.createElement("button");
+    linkButton.className = "secondary-button small-button";
+    linkButton.type = "button";
+    linkButton.textContent = @@add_link@@;
+    linkButton.addEventListener("click", () => {
+      openLinkDialog(documentItem);
+    });
+    editActions.append(linkButton);
+
     if (documentItem.whatsapp_chat?.messages?.length) {
       const chatToggle = document.createElement("button");
       chatToggle.className = "secondary-button small-button";
@@ -671,6 +700,9 @@ function renderDocuments(documents) {
       }
       body.append(files);
     }
+    if (documentItem.links?.length) {
+      body.append(renderDocumentLinks(documentItem));
+    }
     item.append(summary, body);
     documentsElement.append(item);
   }
@@ -748,6 +780,190 @@ function appendLinkifiedText(element, text) {
     cursor = match.index + match[0].length;
   }
   element.append(document.createTextNode(text.slice(cursor)));
+}
+
+async function loadLinkTypes(selectId) {
+  const response = await fetch("/api/link-types");
+  if (!response.ok) {
+    throw new Error("Failed to load link types");
+  }
+  const types = await response.json();
+  linkTypeSelect.replaceChildren(document.createElement("option"));
+  linkTypeSelect.options[0].value = "";
+  linkTypeSelect.options[0].textContent = @@choose_link_type@@;
+  for (const type of types) {
+    const option = document.createElement("option");
+    option.value = type.id;
+    option.textContent = type.name;
+    linkTypeSelect.append(option);
+  }
+  if (selectId) {
+    linkTypeSelect.value = selectId;
+  }
+  linkTypesEmptyHint.hidden = types.length > 0;
+}
+
+async function loadLinkTargets(excludeId) {
+  const response = await fetch("/api/folders");
+  if (!response.ok) {
+    throw new Error("Failed to load folders");
+  }
+  const folders = await response.json();
+  linkTargetSelect.replaceChildren(document.createElement("option"));
+  linkTargetSelect.options[0].value = "";
+  linkTargetSelect.options[0].textContent = @@choose_link_target@@;
+
+  for (const folder of folders) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = folder.name;
+    if (folder.id === currentFolderId) {
+      linkTargetSelect.insertBefore(optgroup, linkTargetSelect.firstChild.nextSibling);
+    } else {
+      linkTargetSelect.append(optgroup);
+    }
+    for (const doc of folder.documents) {
+      if (doc.id === excludeId) continue;
+      const option = document.createElement("option");
+      option.value = doc.id;
+      const dateStr = new Date(doc.date + "T00:00:00").toLocaleDateString(@@date_locale@@);
+      option.textContent = `${doc.name} · ${dateStr}`;
+      optgroup.append(option);
+    }
+  }
+}
+
+function openLinkDialog(documentItem) {
+  linkSourceDocumentId = documentItem.id;
+  linkForm.reset();
+  linkFormError.textContent = "";
+  loadLinkTypes();
+  loadLinkTargets(documentItem.id);
+  linkDialog.showModal();
+}
+
+function renderDocumentLinks(documentItem) {
+  const section = document.createElement("section");
+  section.className = "document-links";
+
+  const outgoing = documentItem.links?.filter(l => l.direction === "outgoing") || [];
+  const incoming = documentItem.links?.filter(l => l.direction === "incoming") || [];
+
+  if (outgoing.length > 0) {
+    const heading = document.createElement("h4");
+    heading.textContent = @@links_outgoing@@;
+    section.append(heading);
+
+    const ul = document.createElement("ul");
+    for (const link of outgoing) {
+      const li = document.createElement("li");
+      li.className = "link-item";
+
+      const typeChip = document.createElement("span");
+      typeChip.className = "tag-chip";
+      typeChip.textContent = link.type;
+
+      const button = document.createElement("button");
+      button.className = "link-target";
+      button.type = "button";
+      button.textContent = link.document.name;
+      if (link.document.folder_id !== currentFolderId) {
+        button.textContent += ` · ${format(@@link_in_folder@@, {folder: link.document.folder_name})}`;
+      }
+      button.addEventListener("click", () => {
+        revealDocument(link.document.folder_id, link.document.id);
+      });
+
+      const removeButton = document.createElement("button");
+      removeButton.className = "link-remove";
+      removeButton.type = "button";
+      removeButton.textContent = "×";
+      removeButton.setAttribute("aria-label", format(@@remove_link@@, {name: link.document.name}));
+      removeButton.title = format(@@remove_link@@, {name: link.document.name});
+      removeButton.addEventListener("click", async () => {
+        if (!confirm(format(@@confirm_remove_link@@, {name: link.document.name}))) return;
+        removeButton.disabled = true;
+        const response = await fetch(
+          `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(documentItem.id)}/links/${encodeURIComponent(link.id)}`,
+          {method: "DELETE"}
+        );
+        if (!response.ok) {
+          removeButton.disabled = false;
+          alert(@@remove_link_failed@@);
+          return;
+        }
+        await openFolder(currentFolderId, false);
+      });
+
+      li.append(typeChip, button, removeButton);
+      ul.append(li);
+    }
+    section.append(ul);
+  }
+
+  if (incoming.length > 0) {
+    const heading = document.createElement("h4");
+    heading.textContent = @@links_incoming@@;
+    section.append(heading);
+
+    const ul = document.createElement("ul");
+    for (const link of incoming) {
+      const li = document.createElement("li");
+      li.className = "link-item";
+
+      const typeChip = document.createElement("span");
+      typeChip.className = "tag-chip";
+      typeChip.textContent = link.type;
+
+      const button = document.createElement("button");
+      button.className = "link-target";
+      button.type = "button";
+      button.textContent = link.document.name;
+      if (link.document.folder_id !== currentFolderId) {
+        button.textContent += ` · ${format(@@link_in_folder@@, {folder: link.document.folder_name})}`;
+      }
+      button.addEventListener("click", () => {
+        revealDocument(link.document.folder_id, link.document.id);
+      });
+
+      const removeButton = document.createElement("button");
+      removeButton.className = "link-remove";
+      removeButton.type = "button";
+      removeButton.textContent = "×";
+      removeButton.setAttribute("aria-label", format(@@remove_link@@, {name: link.document.name}));
+      removeButton.title = format(@@remove_link@@, {name: link.document.name});
+      removeButton.addEventListener("click", async () => {
+        if (!confirm(format(@@confirm_remove_link@@, {name: link.document.name}))) return;
+        removeButton.disabled = true;
+        const response = await fetch(
+          `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(documentItem.id)}/links/${encodeURIComponent(link.id)}`,
+          {method: "DELETE"}
+        );
+        if (!response.ok) {
+          removeButton.disabled = false;
+          alert(@@remove_link_failed@@);
+          return;
+        }
+        await openFolder(currentFolderId, false);
+      });
+
+      li.append(typeChip, button, removeButton);
+      ul.append(li);
+    }
+    section.append(ul);
+  }
+
+  return section;
+}
+
+async function revealDocument(folderId, documentId) {
+  if (folderId !== currentFolderId) {
+    await openFolder(folderId);
+  }
+  const details = document.querySelector(`details[data-document-id="${CSS.escape(documentId)}"]`);
+  if (details) {
+    details.open = true;
+    details.scrollIntoView({block: "start"});
+  }
 }
 
 async function openFolder(folderId, updateHash = true) {
@@ -1005,6 +1221,80 @@ documentForm.addEventListener("submit", async (event) => {
   } catch (error) {
     documentFormError.textContent =
       error.message || @@connect_failed@@;
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = originalButtonText;
+  }
+});
+
+closeLinkDialogButton.addEventListener("click", () => linkDialog.close());
+cancelLinkDialogButton.addEventListener("click", () => linkDialog.close());
+linkDialog.addEventListener("close", () => {
+  linkSourceDocumentId = null;
+});
+linkDialog.addEventListener("click", (event) => {
+  if (event.target === linkDialog) linkDialog.close();
+});
+
+addLinkTypeButton.addEventListener("click", async () => {
+  const name = newLinkTypeInput.value.trim();
+  if (!name) return;
+
+  const response = await fetch("/api/link-types", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({name}),
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    linkFormError.textContent = linkErrors[result.error] || @@link_error_invalid_type@@;
+    return;
+  }
+
+  const result = await response.json();
+  newLinkTypeInput.value = "";
+  linkFormError.textContent = "";
+  await loadLinkTypes(result.id);
+});
+
+newLinkTypeInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addLinkTypeButton.click();
+  }
+});
+
+linkForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  linkFormError.textContent = "";
+
+  const submitButton = linkForm.querySelector('button[type="submit"]');
+  const originalButtonText = submitButton.textContent;
+  submitButton.disabled = true;
+  submitButton.textContent = @@saving@@;
+
+  try {
+    const response = await fetch(
+      `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(linkSourceDocumentId)}/links`,
+      {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          target_document_id: linkForm.elements.target_document_id.value,
+          link_type_id: linkForm.elements.link_type_id.value,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const result = await response.json();
+      linkFormError.textContent = linkErrors[result.error] || @@save_failed@@;
+      return;
+    }
+
+    linkDialog.close();
+    await openFolder(currentFolderId, false);
   } finally {
     submitButton.disabled = false;
     submitButton.textContent = originalButtonText;

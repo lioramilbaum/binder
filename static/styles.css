@@ -275,3 +275,11 @@ textarea { resize: vertical; }
   .folder-card { min-height: 180px; }
   .date-time-fields { grid-template-columns: 1fr; gap: 0; }
 }
+
+.document-links { margin-top: 18px; }
+.document-links h4 { margin: 12px 0 6px; }
+.document-links ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.link-item { display: flex; align-items: center; gap: 8px; }
+.link-target { padding: 0; border: none; background: none; color: var(--accent-dark); cursor: pointer; text-decoration: underline; font: inherit; }
+.link-remove { background: none; border: none; cursor: pointer; padding: 0 4px; color: var(--muted); }
+.new-link-type-row { display: flex; gap: 8px; margin-top: 8px; }
