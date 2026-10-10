@@ -50,6 +50,7 @@
             <h2 id="documents-heading">@@documents@@</h2>
             <div class="section-actions">
               <span id="document-count"></span>
+              <button class="secondary-button small-button" id="export-documents-button" type="button">@@export_documents@@</button>
               <button class="primary-button small-button" id="new-document-button" type="button">@@new_document@@</button>
             </div>
           </div>
@@ -66,6 +67,13 @@
         </section>
       </div>
     </main>
+    <section id="print-export" class="print-export" aria-hidden="true">
+      <h1 id="print-export-title" dir="auto"></h1>
+      <table>
+        <thead><tr><th>@@document_name@@</th><th>@@date@@</th></tr></thead>
+        <tbody id="print-export-rows"></tbody>
+      </table>
+    </section>
 
     <dialog id="folder-dialog">
       <form id="folder-form">

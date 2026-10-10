@@ -283,3 +283,14 @@ textarea { resize: vertical; }
 .link-target { padding: 0; border: none; background: none; color: var(--accent-dark); cursor: pointer; text-decoration: underline; font: inherit; }
 .link-remove { background: none; border: none; cursor: pointer; padding: 0 4px; color: var(--muted); }
 .new-link-type-row { display: flex; gap: 8px; margin-top: 8px; }
+.print-export { display: none; }
+.secondary-button:disabled { cursor: not-allowed; opacity: .5; }
+@media print {
+  body { background: white; min-height: 0; }
+  body > :not(#print-export) { display: none !important; }
+  .print-export { display: block; }
+  .print-export h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  .print-export table { width: 100%; border-collapse: collapse; }
+  .print-export th, .print-export td { text-align: start; padding: 6px 8px; border-bottom: 1px solid #ccc; }
+  .print-export td:last-child, .print-export th:last-child { white-space: nowrap; }
+}

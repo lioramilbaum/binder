@@ -8,6 +8,7 @@ const homeView = document.querySelector("#home-view");
 const folderView = document.querySelector("#folder-view");
 const documentsElement = document.querySelector("#documents");
 const documentsEmptyState = document.querySelector("#documents-empty-state");
+const exportDocumentsButton = document.querySelector("#export-documents-button");
 const documentSearch = document.querySelector("#document-search");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
@@ -455,6 +456,20 @@ function renderFolders(folders) {
 const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
 const documentDialogTitle = document.querySelector("#document-dialog-title");
 const documentSubmitButton = documentForm.querySelector('button[type="submit"]');
+
+function renderPrintExport(folderName, documents) {
+  document.querySelector("#print-export-title").textContent = folderName;
+  document.querySelector("#print-export-rows").replaceChildren(...documents.map((documentItem) => {
+    const row = document.createElement("tr");
+    const name = document.createElement("td");
+    name.dir = "auto";
+    name.textContent = documentItem.name;
+    const date = document.createElement("td");
+    date.textContent = dateFormatter.format(new Date(`${documentItem.date}T00:00:00`));
+    row.append(name, date);
+    return row;
+  }));
+}
 
 function renderDocuments(documents) {
   const openIds = new Set(
@@ -975,6 +990,7 @@ async function openFolder(folderId, updateHash = true) {
   const folder = await response.json();
   currentFolderId = folder.id;
   currentDocuments = folder.documents || [];
+  exportDocumentsButton.disabled = currentDocuments.length === 0;
   documentSearch.value = "";
   selectedFilterTags.clear();
   document.querySelector("#current-folder-name").textContent = folder.name;
@@ -1008,6 +1024,11 @@ document.querySelector("#new-folder-button").addEventListener("click", () => dia
 document.querySelector("#close-dialog").addEventListener("click", () => dialog.close());
 document.querySelector("#cancel-dialog").addEventListener("click", () => dialog.close());
 document.querySelector("#back-button").addEventListener("click", () => showHome());
+exportDocumentsButton.addEventListener("click", () => {
+  renderPrintExport(document.querySelector("#current-folder-name").textContent, currentDocuments);
+  document.querySelector("#print-export").setAttribute("aria-hidden", "false");
+  window.print();
+});
 document.querySelector("#new-document-button").addEventListener("click", () => {
   currentDocumentId = null;
   documentDialogEyebrow.textContent = @@new_document_eyebrow@@;

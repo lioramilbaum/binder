@@ -151,6 +151,29 @@ class I18nTests(unittest.TestCase):
             self.assertIn("function renderDocumentLinks(", script)
             self.assertIn("function revealDocument(", script)
 
+    def test_folder_view_exports_document_titles_and_dates(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("@media print", styles)
+        self.assertIn("body > :not(#print-export) { display: none !important; }", styles)
+        for locale in ("he", "en"):
+            page = _get("/", locale)
+            script = _get("/app.js", locale)
+            actions = page.split('<section class="documents-section"', 1)[1].split('<div class="search-bar">', 1)[0]
+            self.assertIn('id="export-documents-button"', actions)
+            self.assertEqual(page.count('id="export-documents-button"'), 1)
+            export = page.split('<section id="print-export"', 1)[1].split("</section>", 1)[0]
+            self.assertEqual(export.count("<th>"), 2)
+            self.assertIn('id="print-export-rows"', export)
+            self.assertIn('exportDocumentsButton.addEventListener("click"', script)
+            self.assertIn("window.print();", script)
+            start = script.index("function renderPrintExport(")
+            body = script[start:script.index("\n}\n", start)]
+            self.assertIn("documentItem.name", body)
+            self.assertIn("documentItem.date", body)
+            for excluded in ("content", "description", "summary", "files", "attachments", "tags", "time", "provider"):
+                self.assertNotIn(f"documentItem.{excluded}", body)
+            self.assertIn("exportDocumentsButton.disabled = currentDocuments.length === 0", script)
+
 
 if __name__ == "__main__":
     unittest.main()
