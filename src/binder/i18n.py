@@ -54,6 +54,10 @@ _HEBREW: dict[str, str] = {
     "remove_file": "הסרת קובץ",
     "confirm_delete_file": 'למחוק את הקובץ "{name}"?',
     "delete_file_failed": "מחיקת הקובץ נכשלה.",
+    "show_pdf": "הצגת PDF",
+    "close_pdf": "סגירת התצוגה",
+    "open_pdf_new_tab": "פתיחה בכרטיסייה חדשה",
+    "pdf_viewer_title": "תצוגת PDF: {name}",
     # AI conversations.
     "ai_thread_title": "כותרת השיחה",
     "ai_thread_transcript_placeholder": "הדביקו את כל הטקסט של השיחה",
@@ -195,6 +199,10 @@ _ENGLISH: dict[str, str] = {
     "remove_file": "Remove file",
     "confirm_delete_file": 'Delete the file "{name}"?',
     "delete_file_failed": "Deleting the file failed.",
+    "show_pdf": "View PDF",
+    "close_pdf": "Close viewer",
+    "open_pdf_new_tab": "Open in new tab",
+    "pdf_viewer_title": "PDF viewer: {name}",
     # AI conversations.
     "ai_thread_title": "Conversation title",
     "ai_thread_transcript_placeholder": "Paste the complete conversation text here",

@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from tempfile import TemporaryFile
 from typing import BinaryIO, Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from .config import (
     GOOGLE_API_KEY,
@@ -624,11 +624,14 @@ class Binder(BaseHTTPRequestHandler):
         if result is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        body, content_type, _name = result
+        body, content_type, name = result
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header(
+            "Content-Disposition", f"inline; filename*=UTF-8''{quote(name, safe='')}"
+        )
         self.end_headers()
         self.wfile.write(body)
 

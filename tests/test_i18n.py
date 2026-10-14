@@ -151,6 +151,21 @@ class I18nTests(unittest.TestCase):
             self.assertIn("function renderDocumentLinks(", script)
             self.assertIn("function revealDocument(", script)
 
+    def test_pdf_attachments_open_in_inline_viewer(self):
+        styles = _get("/styles.css", "he")
+        self.assertIn(".pdf-frame", styles)
+        for locale in ("he", "en"):
+            script = _get("/app.js", locale)
+            self.assertIn("function renderPdfViewer(", script)
+            self.assertIn('attachment.content_type === "application/pdf"', script)
+            self.assertIn("event.preventDefault()", script)
+            self.assertIn("aria-expanded", script)
+            self.assertIn('document.createElement("iframe")', script)
+            self.assertIn("pdf-frame", script)
+            start = script.index("function renderPdfViewer(")
+            body = script[start:script.index("\n}\n", start)]
+            self.assertNotIn("sandbox", body)
+
     def test_folder_view_exports_document_titles_and_dates(self):
         styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
         self.assertIn("@media print", styles)

@@ -92,11 +92,18 @@ def _resolve_tags(session: Session, names: list[str]) -> list[Tag]:
     return [existing[k] for k in keys]
 
 
+def effective_content_type(content_type: str, name: str) -> str:
+    """PDFs uploaded as generic binary are still served as PDFs so browsers can show them inline."""
+    if content_type == "application/octet-stream" and Path(name).suffix.lower() == ".pdf":
+        return "application/pdf"
+    return content_type
+
+
 def _file_to_dict(file: DocumentFile) -> dict[str, object]:
     return {
         "id": file.id,
         "name": file.name,
-        "content_type": file.content_type,
+        "content_type": effective_content_type(file.content_type, file.name),
         "size": file.size,
     }
 
@@ -549,7 +556,11 @@ def get_file(
         )
         if file is None:
             return None
-        return read_large_object(session, file.data_oid), file.content_type, file.name
+        return (
+            read_large_object(session, file.data_oid),
+            effective_content_type(file.content_type, file.name),
+            file.name,
+        )
 
 
 def find_duplicates(factory: sessionmaker[Session]) -> dict[str, object]:

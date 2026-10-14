@@ -186,6 +186,24 @@ class BinderAttachmentTests(unittest.TestCase):
         handler.send_header.assert_any_call("Content-Type", "image/jpeg")
         self.assertEqual(handler.wfile.getvalue(), b"image bytes")
 
+    def test_sends_pdf_inline_with_filename(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/folder/documents/document/files/file"
+        handler.store = Mock()
+        handler.store.get_file.return_value = (b"%PDF-1.7", "application/pdf", "דוח.pdf")
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+        handler.wfile = io.BytesIO()
+
+        handler.do_GET()
+
+        handler.send_header.assert_any_call("Content-Type", "application/pdf")
+        handler.send_header.assert_any_call(
+            "Content-Disposition", "inline; filename*=UTF-8''%D7%93%D7%95%D7%97.pdf"
+        )
+        self.assertEqual(handler.wfile.getvalue(), b"%PDF-1.7")
+
     def test_missing_attachment_returns_404(self):
         handler = object.__new__(Binder)
         handler.path = "/api/folders/folder/documents/document/files/file"

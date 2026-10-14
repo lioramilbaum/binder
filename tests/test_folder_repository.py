@@ -12,7 +12,9 @@ from sqlalchemy.orm import sessionmaker
 from binder import folder_repository
 from binder import dedupe
 from binder.database import Base
+from binder.folder_repository import _file_to_dict, effective_content_type
 from binder.large_objects import RELEASE_FUNCTION_SQL, RELEASE_TRIGGER_SQL
+from binder.models import DocumentFile
 
 
 class FolderRepositoryTests(unittest.TestCase):
@@ -659,6 +661,35 @@ class DocumentTypeMigrationTests(unittest.TestCase):
 _TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
 
 
+class TestEffectiveContentType(unittest.TestCase):
+    """PDFs stored as generic binary are reported as PDFs; everything else is unchanged."""
+
+    def test_octet_stream_pdf_extension_becomes_pdf(self):
+        self.assertEqual(effective_content_type("application/octet-stream", "Report.PDF"), "application/pdf")
+
+    def test_pdf_stays_pdf(self):
+        self.assertEqual(effective_content_type("application/pdf", "x.pdf"), "application/pdf")
+
+    def test_other_octet_stream_is_unchanged(self):
+        self.assertEqual(effective_content_type("application/octet-stream", "notes.bin"), "application/octet-stream")
+
+    def test_non_binary_type_with_pdf_name_is_unchanged(self):
+        self.assertEqual(effective_content_type("image/jpeg", "a.pdf"), "image/jpeg")
+
+    def test_file_to_dict_reports_pdf_content_type(self):
+        file = DocumentFile(
+            id="f",
+            name="scan.pdf",
+            content_type="application/octet-stream",
+            size=1,
+            document_id="",
+            data_oid=0,
+            created_at="",
+        )
+
+        self.assertEqual(_file_to_dict(file)["content_type"], "application/pdf")
+
+
 @unittest.skipUnless(
     _TEST_DATABASE_URL,
     "attachments are stored as PostgreSQL large objects; set TEST_DATABASE_URL to a "
@@ -796,6 +827,22 @@ class AttachmentRepositoryTests(unittest.TestCase):
         self.assertEqual(dedupe.merge_duplicates(self.factory), len(b"legacy"))
         self.assertEqual(self._large_object_count(), 1)
         self.assertEqual(folder_repository.find_duplicates(self.factory)["reclaimable_bytes"], 0)
+
+    def test_pdf_uploaded_as_octet_stream_served_as_pdf(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+        document = folder_repository.create_document(self.factory, folder["id"], "2026-08-30", "סריקה")
+        files = folder_repository.add_files(
+            self.factory,
+            folder["id"],
+            document["id"],
+            [("סריקה.pdf", "application/octet-stream", b"%PDF-1.4 test")],
+        )
+
+        self.assertEqual(files[0]["content_type"], "application/pdf")
+        self.assertEqual(
+            folder_repository.get_file(self.factory, folder["id"], document["id"], files[0]["id"])[1],
+            "application/pdf",
+        )
 
     def test_add_file_from_stream(self):
         import io

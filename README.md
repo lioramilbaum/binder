@@ -173,6 +173,17 @@ docker compose exec app binder-dedupe merge           # dry run: space that woul
 docker compose exec app binder-dedupe merge --apply   # share one copy per group (run make backup first)
 ```
 
+## PDF attachments
+
+Clicking a PDF tile shows it inline in the browser's PDF viewer below the
+document's attachments. Ctrl/Cmd-click opens it in a new tab instead.
+
+Some mobile browsers (iOS Safari, older Android Chrome) can't render PDFs in
+embedded frames, so the viewer shows an "Open in new tab" link instead.
+
+PDFs uploaded as `application/octet-stream` are automatically served as
+`application/pdf`, so browsers can display them inline.
+
 ## Tags
 
 Documents can be tagged with free-text labels to organize and filter content.

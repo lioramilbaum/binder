@@ -471,6 +471,38 @@ function renderPrintExport(folderName, documents) {
   }));
 }
 
+function renderPdfViewer(attachment, url) {
+  const viewer = document.createElement("div");
+  viewer.className = "pdf-viewer";
+  viewer.dataset.fileId = String(attachment.id);
+  const bar = document.createElement("div");
+  bar.className = "pdf-viewer-bar";
+  const filename = document.createElement("span");
+  filename.textContent = attachment.name;
+  filename.dir = "auto";
+  const openLink = document.createElement("a");
+  openLink.href = url;
+  openLink.target = "_blank";
+  openLink.rel = "noopener";
+  openLink.textContent = @@open_pdf_new_tab@@;
+  const closeButton = document.createElement("button");
+  closeButton.className = "secondary-button small-button";
+  closeButton.type = "button";
+  closeButton.textContent = @@close_pdf@@;
+  closeButton.addEventListener("click", () => {
+    const container = viewer.parentElement;
+    viewer.remove();
+    container?.querySelector('.attachment-pdf[aria-expanded="true"]')?.setAttribute("aria-expanded", "false");
+  });
+  bar.append(filename, openLink, closeButton);
+  const frame = document.createElement("iframe");
+  frame.className = "pdf-frame";
+  frame.src = url;
+  frame.title = format(@@pdf_viewer_title@@, { name: attachment.name });
+  viewer.append(bar, frame);
+  return viewer;
+}
+
 function renderDocuments(documents) {
   const openIds = new Set(
     [...documentsElement.querySelectorAll("details.document-item[open]")].map(
@@ -688,6 +720,29 @@ function renderDocuments(documents) {
           image.src = url;
           image.alt = attachment.name;
           link.append(image);
+        }
+        if (attachment.content_type === "application/pdf") {
+          link.classList.add("attachment-pdf");
+          const badge = document.createElement("span");
+          badge.className = "attachment-pdf-badge";
+          badge.setAttribute("aria-hidden", "true");
+          badge.textContent = "PDF";
+          link.append(badge);
+          link.title = @@show_pdf@@;
+          link.setAttribute("aria-expanded", "false");
+          link.addEventListener("click", (event) => {
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            const existing = body.querySelector(".pdf-viewer");
+            const isOpen = existing?.dataset.fileId === String(attachment.id);
+            existing?.remove();
+            for (const other of files.querySelectorAll('.attachment-pdf[aria-expanded="true"]')) {
+              other.setAttribute("aria-expanded", "false");
+            }
+            if (isOpen) return;
+            files.after(renderPdfViewer(attachment, url));
+            link.setAttribute("aria-expanded", "true");
+          });
         }
         const filename = document.createElement("span");
         filename.textContent = attachment.name;

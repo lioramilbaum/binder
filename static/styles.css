@@ -154,6 +154,53 @@ button { cursor: pointer; }
   cursor: pointer;
 }
 .attachment-remove:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
+
+.attachment-pdf-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.7em;
+  font-weight: 600;
+  background: var(--accent, #0057b8);
+  color: #fff;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+}
+
+.pdf-viewer {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.pdf-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.875em;
+}
+
+.pdf-viewer-bar span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pdf-frame {
+  display: block;
+  width: 100%;
+  height: min(80vh, 900px);
+  border: 0;
+}
+
+@media (max-width: 600px) {
+  .pdf-frame { height: 70vh; }
+}
 .whatsapp-chat { display: grid; gap: 5px; max-height: 620px; margin-top: 18px; padding: 18px 14px; overflow-y: auto; border-radius: 9px; background-color: #efeae2; background-image: radial-gradient(rgba(70, 90, 80, .08) 1px, transparent 1px); background-size: 18px 18px; }
 .chat-date { justify-self: center; margin: 8px 0; padding: 5px 10px; border-radius: 7px; color: #54656f; background: #f7f8d4; font-size: .74rem; }
 .chat-system-message { justify-self: center; max-width: 82%; padding: 6px 10px; text-align: center; border-radius: 7px; color: #54656f; background: #d9f0f4; font-size: .75rem; }
