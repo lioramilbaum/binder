@@ -189,6 +189,54 @@ class I18nTests(unittest.TestCase):
                 self.assertNotIn(f"documentItem.{excluded}", body)
             self.assertIn("exportDocumentsButton.disabled = currentDocuments.length === 0", script)
 
+    def test_sidebar_navigation_markup(self):
+        """Sidebar shell elements are present in the rendered page."""
+        for locale in ("he", "en"):
+            page = _get("/", locale)
+            self.assertIn('<aside class="sidebar" id="sidebar"', page)
+            self.assertIn('id="sidebar-folders"', page)
+            self.assertIn('id="sidebar-toggle"', page)
+            self.assertIn('aria-controls="sidebar"', page)
+            self.assertIn('aria-expanded="false"', page)
+            # new-folder-button must appear exactly once and inside the sidebar
+            self.assertEqual(page.count('id="new-folder-button"'), 1)
+            aside_start = page.index('<aside class="sidebar" id="sidebar"')
+            aside_end = page.index("</aside>", aside_start)
+            self.assertIn('id="new-folder-button"', page[aside_start:aside_end])
+            # print-export comes after main-column (outside the shell)
+            self.assertGreater(page.index('<section id="print-export"'), page.index('<div class="main-column">'))
+
+    def test_sidebar_script_behaviour(self):
+        """app.js contains the required sidebar functions and behaviour."""
+        script = _get("/app.js", "en")
+        self.assertIn("function renderSidebarFolders(", script)
+        self.assertIn("function setActiveSidebarFolder(", script)
+        self.assertIn("function setSidebarOpen(", script)
+        self.assertIn('"sidebar-open"', script)
+        self.assertIn("aria-current", script)
+        # renderSidebarFolders uses textContent, not innerHTML
+        start = script.index("function renderSidebarFolders(")
+        end = script.index("function setActiveSidebarFolder(", start)
+        body = script[start:end]
+        self.assertIn("textContent", body)
+        self.assertNotIn("innerHTML", body)
+
+    def test_dark_theme_styles(self):
+        """styles.css uses the dark theme tokens and safe properties."""
+        styles = _get("/styles.css", "en")
+        self.assertIn("color-scheme: dark", styles)
+        self.assertIn("--sidebar-bg", styles)
+        self.assertIn("prefers-reduced-motion", styles)
+        self.assertIn('[dir="rtl"]', styles)
+        self.assertIn("body.sidebar-open .sidebar", styles)
+        # no physical margin-left or margin-right in CSS rules
+        self.assertIsNone(re.search(r"margin-(left|right)\s*:", styles))
+        # print block includes black text
+        self.assertIn("@media print", styles)
+        print_start = styles.index("@media print")
+        print_block = styles[print_start:]
+        self.assertIn("color: #000", print_block)
+
 
 if __name__ == "__main__":
     unittest.main()

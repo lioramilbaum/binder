@@ -5,23 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>@@app_title@@</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#212121">
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="@@brand_home@@">
-        <span class="brand-mark" aria-hidden="true">B</span>
-        <span>Binder</span>
-      </a>
-    </header>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="@@main_navigation@@">
+        <div class="sidebar-header">
+          <a class="brand" href="/" aria-label="@@brand_home@@">
+            <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <rect width="24" height="24" rx="6" fill="#ececec"/>
+              <path d="M7 7h5a3 3 0 0 1 0 6H7V7zm0 6h5.5a3.5 3.5 0 0 1 0 7H7v-7z" fill="#212121" stroke="none"/>
+            </svg>
+            <span>Binder</span>
+          </a>
+          <button class="icon-button sidebar-close" id="sidebar-close" type="button" aria-label="@@close_sidebar@@">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <button class="sidebar-new-button" id="new-folder-button" type="button">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          @@new_folder@@
+        </button>
+        <nav class="sidebar-nav" aria-labelledby="sidebar-folders-heading">
+          <h2 class="sidebar-section-title" id="sidebar-folders-heading">@@my_folders@@</h2>
+          <ul class="sidebar-folder-list" id="sidebar-folders"></ul>
+        </nav>
+      </aside>
+      <div class="sidebar-scrim" id="sidebar-scrim" aria-hidden="true"></div>
+      <div class="main-column">
+        <header class="topbar">
+          <button class="icon-button" id="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="@@open_sidebar@@">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+          <span class="topbar-title">Binder</span>
+          <button class="icon-button" id="topbar-new-folder-button" type="button" aria-label="@@new_folder@@">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </header>
 
-    <main>
+        <main>
       <div id="home-view">
         <section class="hero">
           <p class="eyebrow">@@workspace@@</p>
           <h1>@@home_heading@@</h1>
           <p>@@home_tagline@@</p>
-          <button class="primary-button" id="new-folder-button" type="button">@@new_folder@@</button>
         </section>
 
         <section class="folders-section" aria-labelledby="folders-heading">
@@ -66,7 +95,9 @@
           </div>
         </section>
       </div>
-    </main>
+        </main>
+      </div>
+    </div>
     <section id="print-export" class="print-export" aria-hidden="true">
       <h1 id="print-export-title" dir="auto"></h1>
       <table>

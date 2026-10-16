@@ -1,6 +1,10 @@
 const foldersElement = document.querySelector("#folders");
 const emptyState = document.querySelector("#empty-state");
 const folderCount = document.querySelector("#folder-count");
+const sidebarFolders = document.getElementById("sidebar-folders");
+const sidebarToggle = document.getElementById("sidebar-toggle");
+const sidebarScrim = document.getElementById("sidebar-scrim");
+const topbarNewFolderButton = document.getElementById("topbar-new-folder-button");
 const dialog = document.querySelector("#folder-dialog");
 const form = document.querySelector("#folder-form");
 const formError = document.querySelector("#form-error");
@@ -451,6 +455,40 @@ function renderFolders(folders) {
     card.addEventListener("click", () => openFolder(folder.id));
     foldersElement.append(card);
   }
+  renderSidebarFolders(folders);
+}
+
+function renderSidebarFolders(folders) {
+  if (!sidebarFolders) return;
+  sidebarFolders.replaceChildren();
+  folders.forEach(folder => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.className = "sidebar-folder-link";
+    a.href = "#folder/" + folder.id;
+    a.setAttribute("data-folder-id", folder.id);
+    a.setAttribute("dir", "auto");
+    a.textContent = folder.name;
+    li.appendChild(a);
+    sidebarFolders.appendChild(li);
+  });
+  setActiveSidebarFolder(currentFolderId);
+}
+
+function setActiveSidebarFolder(folderId) {
+  if (!sidebarFolders) return;
+  sidebarFolders.querySelectorAll(".sidebar-folder-link").forEach(link => {
+    if (folderId && link.getAttribute("data-folder-id") === folderId) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
+function setSidebarOpen(open) {
+  document.body.classList.toggle("sidebar-open", open);
+  if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", String(open));
 }
 
 const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
@@ -1044,6 +1082,7 @@ async function openFolder(folderId, updateHash = true) {
   }
   const folder = await response.json();
   currentFolderId = folder.id;
+  setActiveSidebarFolder(currentFolderId);
   currentDocuments = folder.documents || [];
   exportDocumentsButton.disabled = currentDocuments.length === 0;
   documentSearch.value = "";
@@ -1061,6 +1100,7 @@ async function openFolder(folderId, updateHash = true) {
 
 function showHome(updateHash = true) {
   currentFolderId = null;
+  setActiveSidebarFolder(null);
   currentDocuments = [];
   documentSearch.value = "";
   selectedFilterTags.clear();
@@ -1382,6 +1422,35 @@ documentSearch.addEventListener("input", applyDocumentFilters);
 documentTypeSelect.addEventListener("change", (event) => {
   applyDocumentType(event.target.value);
 });
+
+// Sidebar open/close
+if (sidebarToggle) {
+  sidebarToggle.addEventListener("click", () => setSidebarOpen(true));
+}
+const sidebarCloseBtn = document.getElementById("sidebar-close");
+if (sidebarCloseBtn) {
+  sidebarCloseBtn.addEventListener("click", () => setSidebarOpen(false));
+}
+if (sidebarScrim) {
+  sidebarScrim.addEventListener("click", () => setSidebarOpen(false));
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.body.classList.contains("sidebar-open") && !document.querySelector("dialog[open]")) {
+    setSidebarOpen(false);
+  }
+});
+if (sidebarFolders) {
+  sidebarFolders.addEventListener("click", (e) => {
+    if (e.target.closest(".sidebar-folder-link")) setSidebarOpen(false);
+  });
+}
+const newFolderSidebarBtn = document.getElementById("new-folder-button");
+if (newFolderSidebarBtn) {
+  newFolderSidebarBtn.addEventListener("click", () => setSidebarOpen(false));
+}
+if (topbarNewFolderButton) {
+  topbarNewFolderButton.addEventListener("click", () => dialog.showModal());
+}
 
 async function start() {
   await loadFolders();

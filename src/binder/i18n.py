@@ -17,6 +17,9 @@ _HEBREW: dict[str, str] = {
     "folder_title": "{name} — Binder",
     "date_locale": "he-IL",
     "brand_home": "Binder — דף הבית",
+    "main_navigation": "ניווט ראשי",
+    "open_sidebar": "פתיחת סרגל הצד",
+    "close_sidebar": "סגירת סרגל הצד",
     # Home view.
     "workspace": "מרחב העבודה שלך",
     "home_heading": "על איזו תיקייה עובדים?",
@@ -162,6 +165,9 @@ _ENGLISH: dict[str, str] = {
     "folder_title": "{name} — Binder",
     "date_locale": "en-US",
     "brand_home": "Binder — home",
+    "main_navigation": "Main navigation",
+    "open_sidebar": "Open sidebar",
+    "close_sidebar": "Close sidebar",
     # Home view.
     "workspace": "Your workspace",
     "home_heading": "Which folder are you working on?",
