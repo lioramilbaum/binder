@@ -5,7 +5,7 @@ ollama serve &
 SERVE_PID=$!
 
 # Wait for ollama to be ready
-until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do
+until ollama list > /dev/null 2>&1; do
     sleep 1
 done
 
