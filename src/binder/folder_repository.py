@@ -7,12 +7,21 @@ from pathlib import Path
 from typing import BinaryIO, Sequence, Union
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
+from .config import OLLAMA_QUERY_TIMEOUT, SEMANTIC_MIN_SIMILARITY
 from .database import session_scope
+from .embeddings import EmbeddingUnavailable, OllamaClient, pending_document_ids
 from .large_objects import create_large_object, hash_stream, read_large_object
+from .search import (
+    CANDIDATE_LIMIT,
+    MIN_SEMANTIC_QUERY_LENGTH,
+    build_tsquery,
+    reciprocal_rank_fusion,
+    semantic_candidates,
+)
 from .models import (
     DOCUMENT_TYPE_AI,
     DOCUMENT_TYPE_REGULAR,
@@ -26,6 +35,7 @@ from .models import (
     Tag,
 )
 from .tags import normalize_tags, tag_key
+from .text_extraction import extract_text
 from .whatsapp import WhatsAppChat
 
 
@@ -478,15 +488,26 @@ def add_files(
             )
             if oid is None:
                 oid = create_large_object(session, content)
+            # Identical bytes share extracted text instead of parsing them again.
+            text_content = (
+                session.query(DocumentFile.text_content)
+                .filter(DocumentFile.data_oid == oid, DocumentFile.text_content.is_not(None))
+                .limit(1)
+                .scalar()
+            )
+            stored_content_type = content_type or "application/octet-stream"
+            if text_content is None:
+                text_content = extract_text(filename, stored_content_type, content, size)
 
             file = DocumentFile(
                 id=str(uuid4()),
                 document_id=document_id,
                 name=Path(filename).name,
-                content_type=content_type or "application/octet-stream",
+                content_type=stored_content_type,
                 size=size,
                 data_oid=oid,
                 sha256=digest,
+                text_content=text_content,
                 created_at=_now(),
             )
             session.add(file)
@@ -879,3 +900,131 @@ def remove_document_link(
         )
 
         return _document_to_dict(document)
+
+
+def _keyword_candidates(
+    session: Session, terms: str, folder_id: str | None, limit: int
+) -> list[tuple[str, float]]:
+    folder_clause = " AND d.folder_id = :folder_id" if folder_id is not None else ""
+    params: dict[str, object] = {"terms": terms, "limit": limit}
+    if folder_id is not None:
+        params["folder_id"] = folder_id
+    rows = session.execute(
+        text(
+            "SELECT d.id, ts_rank(d.search_vector, to_tsquery('simple', :terms)) AS rank "
+            "FROM documents d "
+            "WHERE d.search_vector @@ to_tsquery('simple', :terms)"
+            f"{folder_clause} "
+            "ORDER BY rank DESC, d.id LIMIT :limit"
+        ),
+        params,
+    )
+    return [(row[0], float(row[1])) for row in rows]
+
+
+def _search_result(
+    query: str, results: list[dict[str, object]], semantic: str, pending: int
+) -> dict[str, object]:
+    return {
+        "query": query,
+        "results": results,
+        "semantic": semantic,
+        "embeddings_pending": pending,
+    }
+
+
+def search_documents(
+    factory: sessionmaker[Session],
+    query: str,
+    folder_id: str | None = None,
+    *,
+    embedder: OllamaClient | None = None,
+    mode: str = "hybrid",
+    limit: int = 50,
+) -> dict[str, object]:
+    """Search documents by keyword and, when available, by meaning.
+
+    ``semantic`` in the response is one of ``ok``, ``unavailable`` (Ollama failed),
+    ``disabled`` (no embedder configured), or ``skipped`` (keyword-only mode or a
+    query too short to embed meaningfully).
+    """
+
+    query = query.strip()
+
+    # Embed before opening a DB session so a slow Ollama call holds no connection.
+    query_vector: list[float] | None = None
+    if embedder is None:
+        semantic = "disabled"
+    elif mode == "keyword" or len(query) < MIN_SEMANTIC_QUERY_LENGTH:
+        semantic = "skipped"
+    else:
+        try:
+            query_vector = embedder.embed([query], kind="query", timeout=OLLAMA_QUERY_TIMEOUT)[0]
+            semantic = "ok"
+        except EmbeddingUnavailable:
+            semantic = "unavailable"
+
+    terms = build_tsquery(query)
+    # Semantic-only mode still falls back to keywords when no vector is available.
+    use_keyword = terms is not None and (mode != "semantic" or query_vector is None)
+    if not use_keyword and query_vector is None:
+        return _search_result(query, [], semantic, 0)
+
+    with factory() as session:
+        keyword = (
+            _keyword_candidates(session, terms, folder_id, CANDIDATE_LIMIT) if use_keyword else []
+        )
+        semantic_hits: list[tuple[str, float]] = []
+        pending = 0
+        if query_vector is not None and embedder is not None:
+            semantic_hits = semantic_candidates(
+                session,
+                folder_id,
+                query_vector,
+                model=embedder.model,
+                dims=len(query_vector),
+                limit=CANDIDATE_LIMIT,
+                min_similarity=SEMANTIC_MIN_SIMILARITY,
+            )
+        if embedder is not None:
+            pending = len(pending_document_ids(session, embedder.model))
+
+        fused = reciprocal_rank_fusion(
+            [[item_id for item_id, _ in keyword], [item_id for item_id, _ in semantic_hits]]
+        )[:limit]
+        ids = [item_id for item_id, _ in fused]
+        if not ids:
+            return _search_result(query, [], semantic, pending)
+
+        keyword_ranks = dict(keyword)
+        semantic_ids = {item_id for item_id, _ in semantic_hits}
+        scores = dict(fused)
+        documents = {
+            document.id: document
+            for document in session.query(Document)
+            .options(selectinload(Document.tags), selectinload(Document.folder))
+            .filter(Document.id.in_(ids))
+            .all()
+        }
+
+    results: list[dict[str, object]] = []
+    for item_id in ids:
+        document = documents.get(item_id)
+        if document is None:
+            continue
+        matched_by = []
+        if item_id in keyword_ranks:
+            matched_by.append("keyword")
+        if item_id in semantic_ids:
+            matched_by.append("semantic")
+        results.append(
+            {
+                "id": document.id,
+                "folder_id": document.folder_id,
+                "folder_name": document.folder.name,
+                "rank": keyword_ranks.get(item_id),
+                "matched_by": matched_by,
+                "score": scores[item_id],
+            }
+        )
+    return _search_result(query, results, semantic, pending)

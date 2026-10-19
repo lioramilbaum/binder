@@ -204,6 +204,114 @@ them.
 `GET /api/tags` returns a sorted list of all tags and their document counts,
 used to populate the tag suggestions autocomplete.
 
+## Search
+
+The search box in a folder matches documents by keyword and, when semantic
+search is enabled, by meaning. Results are ordered by relevance, and the tag
+filter still applies to them.
+
+What is indexed, with weights from highest to lowest:
+
+- **A**: the document title and its tags
+- **B**: the summary and description
+- **C**: the document body (the first 200,000 characters)
+- **D**: the extracted text of its attachments (up to 400,000 characters combined)
+
+Every word you type must match (AND), and each word also matches as a prefix,
+so `lease` finds `leases`. Punctuation and search operators are
+ignored, so typing `a | b` searches for `a` and `b`.
+
+Hebrew is matched with its one-letter prefixes (ו, ב, ה, ל, מ, ש, כ) removed,
+so `שכירות` also finds `השכירות` and `ושכירות`, and `שכיר` finds `שכירות`.
+
+Attachment text is extracted when a file is uploaded:
+
+- Plain text (`.txt`, `.md`, `.csv`, `.tsv`, `.json`, `.log`): UTF-8, UTF-16
+  with a byte-order mark, or Windows-1255
+- WhatsApp exports (`.zip` or `.txt`)
+- PDF (text-based; scanned images have no text to extract)
+- Word (`.docx`)
+
+Images and other types are not searched by content. Files over 50 MB are
+never extracted, and extracted text is capped at 200,000 characters per file.
+Extraction runs during the upload, so large files add a little to the upload
+time. Files that already have identical bytes reuse the stored text.
+
+`GET /api/search` returns:
+
+| Parameter   | Meaning                                                                  |
+|-------------|--------------------------------------------------------------------------|
+| `q`         | Required. 1 to 200 characters.                                           |
+| `folder_id` | Optional. Limit results to one folder.                                   |
+| `limit`     | Optional. 1 to 500, default 50.                                          |
+| `mode`      | Optional. `hybrid` (default), `keyword`, or `semantic`.                  |
+
+Invalid input returns `400` with `{"error": "invalid_query"}`,
+`{"error": "invalid_limit"}`, or `{"error": "invalid_request"}`. A successful
+response looks like:
+
+```json
+{
+  "query": "lease",
+  "results": [
+    {"id": "…", "folder_id": "…", "folder_name": "Case", "rank": 0.07,
+     "matched_by": ["keyword", "semantic"], "score": 0.033}
+  ],
+  "semantic": "ok",
+  "embeddings_pending": 0
+}
+```
+
+`rank` is the keyword relevance score from PostgreSQL. It is `null` (not a
+float) for a document matched only by meaning, because it has no keyword rank.
+
+`semantic` is `ok`, `unavailable` (Ollama did not answer, so only keyword
+matches are shown), `disabled` (semantic search is off), or `skipped` (keyword
+mode, or a query under three characters). `matched_by` lists how each document
+was found. The UI shows a "Related by meaning" badge for documents found only
+by meaning.
+
+### Semantic Search
+
+Semantic search finds documents that share meaning with the query even when
+they use different words, for example an English query that finds a Hebrew
+document. It uses a local [Ollama](https://ollama.com) server running the
+`bge-m3` embedding model, and vectors are stored in PostgreSQL with pgvector.
+
+`docker compose up` starts an `ollama` service, which pulls `bge-m3` the first
+time (about 1.2 GB, kept in the `ollama-data` volume). The app starts without
+waiting for that pull, so keyword search works from the first request.
+
+Documents are embedded in the background after each change. A document is
+embedded again when its content changes, and a retry runs every minute if
+Ollama was unreachable. Matches must reach `BINDER_SEMANTIC_MIN_SIMILARITY`
+(default `0.5`).
+
+Settings, in `.env`:
+
+- `BINDER_SEMANTIC_SEARCH`: empty to enable (default); `0`, `false` or `no` to disable
+- `BINDER_EMBEDDING_MODEL`: default `bge-m3`
+- `BINDER_EMBEDDING_DIMENSIONS`: must match the model (`bge-m3` is `1024`)
+- `BINDER_SEMANTIC_MIN_SIMILARITY`: default `0.5`
+
+To switch models, change `BINDER_EMBEDDING_MODEL` and `BINDER_EMBEDDING_DIMENSIONS`,
+run `docker compose up -d --build`, and then run the backfill below. Vectors from
+other models are ignored until they are replaced, so search keeps working in the
+meantime.
+
+The `binder-search` command maintains the indexes from the app container:
+
+```bash
+docker compose exec app binder-search backfill      # extract attachment text, rebuild search vectors, embed everything
+docker compose exec app binder-search backfill --skip-embeddings
+docker compose exec app binder-search embed         # embed documents that are missing or stale
+docker compose exec app binder-search embed --all   # re-embed every document, e.g. after a model change
+docker compose exec app binder-search status        # show index and embedding coverage
+```
+
+Run `backfill` once after upgrading, so attachments uploaded before this
+feature become searchable.
+
 ## Running the tests
 
 ```bash
@@ -221,6 +329,10 @@ TEST_DATABASE_URL="postgresql+psycopg://binder:binder_dev@127.0.0.1:5433/binder_
 
 Point it at a throwaway database, never a database with real data — its
 tables are dropped and recreated before every test.
+
+The search tests (`tests/test_search.py`) also need `TEST_DATABASE_URL`. The
+semantic-search tests additionally skip themselves unless the database has the
+pgvector extension, which the Postgres image built by `docker compose` includes.
 
 ## Data location and backups
 

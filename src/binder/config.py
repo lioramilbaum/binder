@@ -30,3 +30,38 @@ if LOCALE not in LOCALES:
     raise ValueError(
         f"Unsupported BINDER_LOCALE {LOCALE!r}; expected one of {sorted(LOCALES)}."
     )
+
+
+# Semantic search (Ollama embeddings stored in pgvector).
+OLLAMA_BASE_URL = (
+    os.environ.get("OLLAMA_BASE_URL", "").strip() or "http://localhost:11434"
+).rstrip("/")
+EMBEDDING_MODEL = os.environ.get("BINDER_EMBEDDING_MODEL", "").strip() or "bge-m3"
+
+
+def _embedding_dimensions() -> int:
+    value = os.environ.get("BINDER_EMBEDDING_DIMENSIONS", "").strip() or "1024"
+    try:
+        return max(int(value), 1)
+    except ValueError:
+        return 1024
+
+
+EMBEDDING_DIMENSIONS = _embedding_dimensions()
+SEMANTIC_SEARCH_ENABLED = os.environ.get(
+    "BINDER_SEMANTIC_SEARCH", ""
+).strip().lower() not in {"0", "false", "no"}
+
+
+def _semantic_min_similarity() -> float:
+    value = os.environ.get("BINDER_SEMANTIC_MIN_SIMILARITY", "").strip() or "0.5"
+    try:
+        return float(value)
+    except ValueError:
+        return 0.5
+
+
+SEMANTIC_MIN_SIMILARITY = _semantic_min_similarity()
+OLLAMA_QUERY_TIMEOUT = 3
+OLLAMA_DOCUMENT_TIMEOUT = 120
+EMBEDDING_MAX_CHARS = 8000

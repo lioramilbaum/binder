@@ -14,6 +14,7 @@ const documentsElement = document.querySelector("#documents");
 const documentsEmptyState = document.querySelector("#documents-empty-state");
 const exportDocumentsButton = document.querySelector("#export-documents-button");
 const documentSearch = document.querySelector("#document-search");
+const searchSemanticHint = document.querySelector("#search-semantic-hint");
 const documentDialog = document.querySelector("#document-dialog");
 const documentForm = document.querySelector("#document-form");
 const documentFormError = document.querySelector("#document-form-error");
@@ -59,6 +60,10 @@ let currentFolderId = null;
 let linkSourceDocumentId = null;
 let currentDocumentId = null;
 let currentDocuments = [];
+let searchResultIds = null;
+let searchSemanticOnlyIds = new Set();
+let searchSequence = 0;
+let searchTimer = 0;
 let documentTags = [];
 const selectedFilterTags = new Set();
 
@@ -244,11 +249,12 @@ function renderTagFilter() {
 }
 
 function applyDocumentFilters() {
-  const q = documentSearch.value.trim().toLowerCase();
   let filtered = currentDocuments;
 
-  if (q) {
-    filtered = filtered.filter((doc) => doc.name.toLowerCase().includes(q));
+  if (searchResultIds !== null) {
+    // Search results arrive in relevance order; keep that order.
+    const byId = new Map(currentDocuments.map((doc) => [doc.id, doc]));
+    filtered = searchResultIds.map((id) => byId.get(id)).filter(Boolean);
   }
 
   if (selectedFilterTags.size > 0) {
@@ -258,6 +264,56 @@ function applyDocumentFilters() {
   }
 
   renderDocuments(filtered);
+}
+
+async function runDocumentSearch() {
+  const q = documentSearch.value.trim();
+  const sequence = ++searchSequence;
+  if (!q) {
+    searchResultIds = null;
+    searchSemanticOnlyIds = new Set();
+    searchSemanticHint.hidden = true;
+    applyDocumentFilters();
+    return;
+  }
+
+  const params = new URLSearchParams({ q, limit: "500" });
+  if (currentFolderId) params.set("folder_id", currentFolderId);
+  let result;
+  try {
+    const response = await fetch(`/api/search?${params}`);
+    if (!response.ok) throw new Error(`Search failed: ${response.status}`);
+    result = await response.json();
+  } catch {
+    if (sequence !== searchSequence) return;
+    // Search endpoint unavailable: fall back to matching titles locally.
+    const lower = q.toLowerCase();
+    searchResultIds = currentDocuments
+      .filter((doc) => doc.name.toLowerCase().includes(lower))
+      .map((doc) => doc.id);
+    searchSemanticOnlyIds = new Set();
+    searchSemanticHint.hidden = true;
+    applyDocumentFilters();
+    return;
+  }
+  if (sequence !== searchSequence) return;
+
+  searchResultIds = result.results.map((item) => item.id);
+  searchSemanticOnlyIds = new Set(
+    result.results
+      .filter((item) => item.matched_by?.length === 1 && item.matched_by[0] === "semantic")
+      .map((item) => item.id),
+  );
+  searchSemanticHint.hidden = result.semantic !== "unavailable";
+  applyDocumentFilters();
+}
+
+function resetDocumentSearch() {
+  searchResultIds = null;
+  searchSemanticOnlyIds = new Set();
+  searchSequence++;
+  clearTimeout(searchTimer);
+  searchSemanticHint.hidden = true;
 }
 
 function applyDocumentType(type) {
@@ -569,6 +625,13 @@ function renderDocuments(documents) {
       badge.className = "document-type-badge";
       badge.textContent = @@document_type_ai@@;
       title.append(" ", badge);
+    }
+
+    if (searchSemanticOnlyIds.has(documentItem.id)) {
+      const semanticBadge = document.createElement("span");
+      semanticBadge.className = "semantic-badge";
+      semanticBadge.textContent = @@search_semantic_match@@;
+      title.append(" ", semanticBadge);
     }
 
     const documentDate = document.createElement("span");
@@ -1085,6 +1148,7 @@ async function openFolder(folderId, updateHash = true) {
   setActiveSidebarFolder(currentFolderId);
   currentDocuments = folder.documents || [];
   exportDocumentsButton.disabled = currentDocuments.length === 0;
+  resetDocumentSearch();
   documentSearch.value = "";
   selectedFilterTags.clear();
   document.querySelector("#current-folder-name").textContent = folder.name;
@@ -1102,6 +1166,7 @@ function showHome(updateHash = true) {
   currentFolderId = null;
   setActiveSidebarFolder(null);
   currentDocuments = [];
+  resetDocumentSearch();
   documentSearch.value = "";
   selectedFilterTags.clear();
   folderView.hidden = true;
@@ -1417,7 +1482,10 @@ linkForm.addEventListener("submit", async (event) => {
   }
 });
 
-documentSearch.addEventListener("input", applyDocumentFilters);
+documentSearch.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runDocumentSearch, 250);
+});
 
 documentTypeSelect.addEventListener("change", (event) => {
   applyDocumentType(event.target.value);

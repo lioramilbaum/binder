@@ -431,6 +431,12 @@ button, .button {
   color: var(--text-subtle);
 }
 
+.search-hint {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-subtle);
+}
+
 /* ── section heading ── */
 .section-heading {
   display: flex;
@@ -536,6 +542,21 @@ button, .button {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--text-muted);
+  flex-shrink: 0;
+  margin-inline-start: 4px;
+}
+
+/* ── semantic match badge ── */
+.semantic-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--focus);
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--focus);
   flex-shrink: 0;
   margin-inline-start: 4px;
 }
@@ -1320,7 +1341,7 @@ input:not([type]):focus {
   color: var(--text);
 }
 
-.document-item span:not(.document-type-badge) {
+.document-item span:not(.document-type-badge):not(.semantic-badge) {
   color: var(--text-subtle);
   font-size: 0.8125rem;
 }

@@ -11,12 +11,36 @@ from .database import create_session_factory
 class Folders:
     def __init__(self, factory: Optional[sessionmaker[Session]] = None):
         self._factory = factory
+        self.embedder = None
+        self.embedding_worker = None
 
     @property
     def factory(self) -> sessionmaker[Session]:
         if self._factory is None:
             self._factory = create_session_factory()
         return self._factory
+
+    def enable_semantic_search(self, embedder, worker) -> None:
+        self.embedder = embedder
+        self.embedding_worker = worker
+
+    def _changed(self) -> None:
+        if self.embedding_worker is not None:
+            self.embedding_worker.notify()
+
+    def search(
+        self,
+        query: str,
+        folder_id: Optional[str] = None,
+        limit: int = 50,
+        embedder=None,
+        mode: str = "hybrid",
+    ) -> dict[str, object]:
+        if embedder is None:
+            embedder = self.embedder
+        return folder_repository.search_documents(
+            self.factory, query, folder_id, embedder=embedder, mode=mode, limit=limit
+        )
 
     def list(self) -> list[dict[str, object]]:
         return folder_repository.list_folders(self.factory)
@@ -43,11 +67,14 @@ class Folders:
         transcript_sha256: str | None = None,
         source_first_message_at: str | None = None,
     ) -> Optional[dict[str, object]]:
-        return folder_repository.create_document(
+        document = folder_repository.create_document(
             self.factory, folder_id, date, name, description, content, time, summary, tags=tags,
             document_type=document_type, provider=provider, source_url=source_url,
             transcript_sha256=transcript_sha256, source_first_message_at=source_first_message_at,
         )
+        if document is not None:
+            self._changed()
+        return document
 
     def add_files(
         self,
@@ -55,17 +82,26 @@ class Folders:
         document_id: str,
         uploads: list[tuple[str, str, Union[bytes, BinaryIO]]],
     ) -> Optional[list[dict[str, object]]]:
-        return folder_repository.add_files(self.factory, folder_id, document_id, uploads)
+        files = folder_repository.add_files(self.factory, folder_id, document_id, uploads)
+        if files is not None:
+            self._changed()
+        return files
 
     def remove_file(
         self, folder_id: str, document_id: str, file_id: str
     ) -> Optional[dict[str, object]]:
-        return folder_repository.remove_file(self.factory, folder_id, document_id, file_id)
+        document = folder_repository.remove_file(self.factory, folder_id, document_id, file_id)
+        if document is not None:
+            self._changed()
+        return document
 
     def update_document(
         self, folder_id: str, document_id: str, updates: dict[str, str]
     ) -> Optional[dict[str, object]]:
-        return folder_repository.update_document(self.factory, folder_id, document_id, updates)
+        document = folder_repository.update_document(self.factory, folder_id, document_id, updates)
+        if document is not None:
+            self._changed()
+        return document
 
     def get_file(
         self, folder_id: str, document_id: str, file_id: str

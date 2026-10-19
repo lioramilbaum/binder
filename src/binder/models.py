@@ -46,7 +46,13 @@ class Folder(Base):
 
 
 class Document(Base):
-    """A single document stored in a folder."""
+    """A single document stored in a folder.
+
+    ``documents.search_vector`` and ``documents.search_embedding*`` exist only in
+    PostgreSQL (maintained by triggers and the search/embedding code, see
+    migrations 10 and 11). They are intentionally unmapped so SQLite
+    ``create_all`` keeps working.
+    """
 
     __tablename__ = "documents"
 
@@ -118,6 +124,10 @@ class DocumentFile(Base):
     # SHA-256 of the bytes; ``None`` for rows created before hashing existed
     # (``binder-dedupe backfill`` fills them in).
     sha256: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    # Text extracted for search at upload time; ``""`` when the type has no
+    # extractor, ``None`` when extraction has not run yet. Deferred so listing
+    # documents never loads it.
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True, default=None, deferred=True)
     created_at: Mapped[str] = mapped_column(String(64))
 
     document: Mapped[Document] = relationship(back_populates="files")
