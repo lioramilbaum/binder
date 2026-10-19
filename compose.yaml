@@ -56,11 +56,8 @@ services:
     build: ./docker/ollama
     image: binder-ollama:latest
     volumes:
-      - ollama-data:/root/.ollama
+      - ./.ollama-data:/root/.ollama
     environment:
       BINDER_EMBEDDING_MODEL: ${BINDER_EMBEDDING_MODEL:-bge-m3}
     ports:
       - "127.0.0.1:11434:11434"
-
-volumes:
-  ollama-data:

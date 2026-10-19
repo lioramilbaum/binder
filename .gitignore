@@ -9,3 +9,4 @@ data/
 .pytest_cache/
 .private-backups/
 .postgres-data/
+.ollama-data/
