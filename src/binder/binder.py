@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from tempfile import TemporaryFile
 from typing import BinaryIO, Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 from .config import (
     GOOGLE_API_KEY,
@@ -29,6 +29,9 @@ from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .i18n import Translator
 from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags, normalize_tag
 from .models import DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI, DOCUMENT_TYPES, MAX_SUMMARY_LENGTH, MAX_LINK_TYPE_LENGTH
+from .search import MAX_QUERY_LENGTH
+
+SEARCH_MODES = {"hybrid", "keyword", "semantic"}
 
 
 class _SharePreviewCache:
@@ -107,6 +110,9 @@ class Binder(BaseHTTPRequestHandler):
         if path == "/api/link-types":
             self._send_json(self.store.link_types())
             return
+        if path == "/api/search":
+            self._search(parse_qs(urlparse(self.path).query))
+            return
         if path == "/api/folders":
             self._send_json(self.store.list())
             return
@@ -139,6 +145,28 @@ class Binder(BaseHTTPRequestHandler):
             self._send_file(STATIC_DIR / "favicon.svg", "image/svg+xml")
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def _search(self, params: dict[str, list[str]]) -> None:
+        query = params.get("q", [""])[0].strip()
+        if not query or len(query) > MAX_QUERY_LENGTH:
+            self._send_json({"error": "invalid_query"}, HTTPStatus.BAD_REQUEST)
+            return
+        folder_id = params.get("folder_id", [""])[0].strip() or None
+        if folder_id is not None and len(folder_id) > 100:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            limit = int(params.get("limit", ["50"])[0])
+        except ValueError:
+            limit = 0
+        if not 1 <= limit <= 500:
+            self._send_json({"error": "invalid_limit"}, HTTPStatus.BAD_REQUEST)
+            return
+        mode = params.get("mode", ["hybrid"])[0]
+        if mode not in SEARCH_MODES:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        self._send_json(self.store.search(query, folder_id=folder_id, limit=limit, mode=mode))
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path

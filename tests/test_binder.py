@@ -583,5 +583,46 @@ class BinderTagsTests(unittest.TestCase):
         )
 
 
+class BinderSearchTests(unittest.TestCase):
+    def search(self, path):
+        handler = object.__new__(Binder)
+        handler.path = path
+        handler.store = Mock()
+        handler.store.search.return_value = {"query": "lease", "results": [], "semantic": "ok"}
+        handler._send_json = Mock()
+        handler.do_GET()
+        return handler
+
+    def test_valid_request_routes_to_store_search(self):
+        handler = self.search("/api/search?q=lease&folder_id=f1&limit=20&mode=keyword")
+
+        handler.store.search.assert_called_once_with("lease", folder_id="f1", limit=20, mode="keyword")
+        handler._send_json.assert_called_once_with(handler.store.search.return_value)
+
+    def test_defaults_are_hybrid_mode_fifty_results_and_all_folders(self):
+        handler = self.search("/api/search?q=lease")
+
+        handler.store.search.assert_called_once_with("lease", folder_id=None, limit=50, mode="hybrid")
+
+    def test_rejects_invalid_requests_without_searching(self):
+        cases = [
+            ("/api/search", "invalid_query"),
+            ("/api/search?q=%20%20", "invalid_query"),
+            ("/api/search?q=" + "a" * 201, "invalid_query"),
+            ("/api/search?q=lease&limit=0", "invalid_limit"),
+            ("/api/search?q=lease&limit=501", "invalid_limit"),
+            ("/api/search?q=lease&limit=abc", "invalid_limit"),
+            ("/api/search?q=lease&mode=bogus", "invalid_request"),
+        ]
+        for path, error in cases:
+            with self.subTest(path=path):
+                handler = self.search(path)
+
+                handler._send_json.assert_called_once_with(
+                    {"error": error}, HTTPStatus.BAD_REQUEST
+                )
+                handler.store.search.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
