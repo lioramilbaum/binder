@@ -7,8 +7,8 @@ messages are stored and rendered in whatever language they were written in.
 import html
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 DEFAULT_LOCALE = "he"
 
@@ -160,6 +160,15 @@ _HEBREW: dict[str, str] = {
     "google_download_failed": 'הורדת "{name}" מ-Google Drive נכשלה.',
     "downloading_files": "מוריד קבצים…",
     "google_import_failed": "יבוא מ-Google Drive נכשל.",
+    # Calendar.
+    "calendar_title": "לוח שנה",
+    "calendar_previous_month": "החודש הקודם",
+    "calendar_next_month": "החודש הבא",
+    "calendar_day_has_documents": "{date}, יש מסמכים",
+    "calendar_no_dates": "אין מסמכים להצגה בלוח השנה",
+    "calendar_filter_active": "מוצגים מסמכים מתאריך {date}",
+    "calendar_clear_filter": "ניקוי סינון התאריך",
+    "calendar_week_start": "0",
 }
 
 _ENGLISH: dict[str, str] = {
@@ -310,6 +319,15 @@ _ENGLISH: dict[str, str] = {
     "google_download_failed": 'Downloading "{name}" from Google Drive failed.',
     "downloading_files": "Downloading files…",
     "google_import_failed": "Importing from Google Drive failed.",
+    # Calendar.
+    "calendar_title": "Calendar",
+    "calendar_previous_month": "Previous month",
+    "calendar_next_month": "Next month",
+    "calendar_day_has_documents": "{date}, has documents",
+    "calendar_no_dates": "No documents to show on the calendar",
+    "calendar_filter_active": "Showing documents from {date}",
+    "calendar_clear_filter": "Clear date filter",
+    "calendar_week_start": "1",
 }
 
 

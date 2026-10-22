@@ -28,6 +28,19 @@
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           @@new_folder@@
         </button>
+        <details class="calendar-panel" id="calendar-panel" hidden>
+          <summary class="sidebar-section-title calendar-summary">@@calendar_title@@</summary>
+          <div class="calendar-header">
+            <button class="icon-button calendar-nav" id="calendar-prev" type="button" aria-label="@@calendar_previous_month@@"><span class="calendar-nav-icon" aria-hidden="true">&#8249;</span></button>
+            <h3 class="calendar-month-label" id="calendar-month-label" aria-live="polite"></h3>
+            <button class="icon-button calendar-nav" id="calendar-next" type="button" aria-label="@@calendar_next_month@@"><span class="calendar-nav-icon" aria-hidden="true">&#8250;</span></button>
+          </div>
+          <table class="calendar-grid" role="grid" aria-labelledby="calendar-month-label">
+            <thead><tr id="calendar-weekdays"></tr></thead>
+            <tbody id="calendar-days"></tbody>
+          </table>
+          <p class="field-hint" id="calendar-empty-hint" hidden>@@calendar_no_dates@@</p>
+        </details>
         <nav class="sidebar-nav" aria-labelledby="sidebar-folders-heading">
           <h2 class="sidebar-section-title" id="sidebar-folders-heading">@@my_folders@@</h2>
           <ul class="sidebar-folder-list" id="sidebar-folders"></ul>
@@ -87,6 +100,10 @@
             <input id="document-search" type="search" placeholder="@@search_documents@@" aria-label="@@search_documents@@">
             <p id="search-semantic-hint" class="search-hint" hidden>@@search_semantic_unavailable@@</p>
             <div id="tag-filter" class="tag-filter" role="group" aria-label="@@filter_by_tags@@" hidden></div>
+            <div id="date-filter-status" class="date-filter-status" hidden>
+              <span id="date-filter-label" aria-live="polite"></span>
+              <button class="secondary-button small-button" id="clear-date-filter" type="button">@@calendar_clear_filter@@</button>
+            </div>
           </div>
           <div id="documents" class="document-list" aria-live="polite"></div>
           <div id="documents-empty-state" class="empty-state" hidden>

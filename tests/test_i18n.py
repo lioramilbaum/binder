@@ -237,6 +237,51 @@ class I18nTests(unittest.TestCase):
         print_block = styles[print_start:]
         self.assertIn("color: #000", print_block)
 
+    def test_calendar_week_start_per_locale(self):
+        self.assertEqual(Translator("he").text("calendar_week_start"), "0")
+        self.assertEqual(Translator("en").text("calendar_week_start"), "1")
+
+    def test_calendar_panel_markup(self):
+        for locale in ("he", "en"):
+            with self.subTest(locale=locale):
+                page = _get("/", locale)
+                self.assertIn('id="calendar-panel"', page)
+                self.assertIn('role="grid"', page)
+                self.assertIn('aria-labelledby="calendar-month-label"', page)
+                self.assertIn('id="date-filter-status"', page)
+
+    def test_calendar_filter_wiring(self):
+        script = _get("/app.js", "en")
+        # applyDocumentFilters must call renderCalendar and filterDocumentsByDate
+        start = script.index("function applyDocumentFilters(")
+        body = script[start:script.index("\n}\n", start)]
+        self.assertIn("renderCalendar(", body)
+        self.assertIn("filterDocumentsByDate(", body)
+        # openFolder must clear selectedDate and show calendarPanel
+        start = script.index("function openFolder(")
+        body = script[start:script.index("\n}\n", start)]
+        self.assertIn("selectedDate = null", body)
+        self.assertIn("calendarPanel.hidden = false", body)
+        # showHome must hide calendarPanel
+        start = script.index("function showHome(")
+        body = script[start:script.index("\n}\n", start)]
+        self.assertIn("calendarPanel.hidden = true", body)
+        # renderCalendar must not use innerHTML
+        start = script.index("function renderCalendar(")
+        body = script[start:script.index("\n}\n", start)]
+        self.assertNotIn("innerHTML", body)
+        self.assertIn("aria-pressed", body)
+        # documentDateKey must use T00:00:00
+        start = script.index("function documentDateKey(")
+        body = script[start:script.index("\n}\n", start)]
+        self.assertIn("T00:00:00", body)
+
+    def test_calendar_styles(self):
+        styles = _get("/styles.css", "en")
+        self.assertIn(".calendar-dot", styles)
+        self.assertIn('[aria-pressed="true"]', styles)
+        self.assertIn('[dir="rtl"] .calendar-nav-icon', styles)
+
 
 if __name__ == "__main__":
     unittest.main()

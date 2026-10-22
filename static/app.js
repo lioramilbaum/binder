@@ -56,6 +56,16 @@ const linkErrors = {
   document_not_found: @@link_error_document_not_found@@,
   invalid_request: @@link_error_invalid_type@@,
 };
+const calendarPanel = document.getElementById("calendar-panel");
+const calendarPrev = document.getElementById("calendar-prev");
+const calendarNext = document.getElementById("calendar-next");
+const calendarMonthLabel = document.getElementById("calendar-month-label");
+const calendarWeekdays = document.getElementById("calendar-weekdays");
+const calendarDays = document.getElementById("calendar-days");
+const calendarEmptyHint = document.getElementById("calendar-empty-hint");
+const dateFilterStatus = document.getElementById("date-filter-status");
+const dateFilterLabel = document.getElementById("date-filter-label");
+const clearDateFilterButton = document.getElementById("clear-date-filter");
 let currentFolderId = null;
 let linkSourceDocumentId = null;
 let currentDocumentId = null;
@@ -66,12 +76,20 @@ let searchSequence = 0;
 let searchTimer = 0;
 let documentTags = [];
 const selectedFilterTags = new Set();
+let selectedDate = null;
+let calendarMonth = null;
+let calendarFocusDate = null;
+let calendarDocuments = [];
 
 const dateFormatter = new Intl.DateTimeFormat(@@date_locale@@, {
   day: "numeric",
   month: "long",
   year: "numeric",
 });
+const CALENDAR_WEEK_START = Number(@@calendar_week_start@@);
+const monthFormatter = new Intl.DateTimeFormat(@@date_locale@@, { month: "long", year: "numeric" });
+const weekdayNarrowFormatter = new Intl.DateTimeFormat(@@date_locale@@, { weekday: "narrow" });
+const weekdayLongFormatter = new Intl.DateTimeFormat(@@date_locale@@, { weekday: "long" });
 
 function localDateTimeInputs(utcValue) {
   if (!utcValue) return null;
@@ -91,6 +109,78 @@ function format(template, values) {
 
 function countLabel(count, one, other) {
   return count === 1 ? one : format(other, { count });
+}
+
+function documentDateKey(value) {
+  if (typeof value !== "string") return null;
+  const s = value.trim();
+  let y, m, d;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/);
+  if (iso) { y = iso[1]; m = iso[2]; d = iso[3]; }
+  else {
+    const compact = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (!compact) return null;
+    y = compact[1]; m = compact[2]; d = compact[3];
+  }
+  const date = new Date(`${y}-${m}-${d}T00:00:00`);
+  if (isNaN(date.getTime())) return null;
+  if (date.getFullYear() !== Number(y) || date.getMonth() + 1 !== Number(m) || date.getDate() !== Number(d)) return null;
+  return `${y}-${m}-${d}`;
+}
+
+function toDateKey(dateObj) {
+  const y = String(dateObj.getFullYear()).padStart(4, "0");
+  const m = String(dateObj.getMonth() + 1).padStart(2, "0");
+  const d = String(dateObj.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function buildCalendarWeeks(year, month0, weekStart) {
+  const firstDow = new Date(year, month0, 1).getDay();
+  const leading = (firstDow - weekStart + 7) % 7;
+  const daysInMonth = new Date(year, month0 + 1, 0).getDate();
+  const cells = Array(leading).fill(null);
+  for (let i = 1; i <= daysInMonth; i++) cells.push(i);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
+
+function filterDocumentsByDate(documents, dateKey) {
+  if (dateKey === null) return documents;
+  return documents.filter(doc => documentDateKey(doc.date) === dateKey);
+}
+
+function nextCalendarFocus(dateKey, key, isRtl, weekStart) {
+  const parts = dateKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return null;
+  const base = new Date(`${dateKey}T00:00:00`);
+  let next;
+  if (key === "ArrowRight") next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + (isRtl ? -1 : 1));
+  else if (key === "ArrowLeft") next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + (isRtl ? 1 : -1));
+  else if (key === "ArrowDown") next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 7);
+  else if (key === "ArrowUp") next = new Date(base.getFullYear(), base.getMonth(), base.getDate() - 7);
+  else if (key === "PageDown") {
+    const nm = base.getMonth() + 1;
+    const dim = new Date(base.getFullYear(), nm + 1, 0).getDate();
+    next = new Date(base.getFullYear(), nm, Math.min(base.getDate(), dim));
+  } else if (key === "PageUp") {
+    const pm = base.getMonth() - 1;
+    const dim = new Date(base.getFullYear(), pm + 1, 0).getDate();
+    next = new Date(base.getFullYear(), pm, Math.min(base.getDate(), dim));
+  } else if (key === "Home") {
+    const dow = base.getDay();
+    const diff = (dow - weekStart + 7) % 7;
+    next = new Date(base.getFullYear(), base.getMonth(), base.getDate() - diff);
+  } else if (key === "End") {
+    const dow = base.getDay();
+    const diff = (weekStart + 6 - dow + 7) % 7;
+    next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + diff);
+  } else {
+    return null;
+  }
+  return toDateKey(next);
 }
 
 function setupFileDropZone(inputId, zoneId, listId, pasteTargetId) {
@@ -263,7 +353,9 @@ function applyDocumentFilters() {
     });
   }
 
-  renderDocuments(filtered);
+  renderCalendar(filtered);
+  renderDateFilterStatus();
+  renderDocuments(filterDocumentsByDate(filtered, selectedDate));
 }
 
 async function runDocumentSearch() {
@@ -545,6 +637,117 @@ function setActiveSidebarFolder(folderId) {
 function setSidebarOpen(open) {
   document.body.classList.toggle("sidebar-open", open);
   if (sidebarToggle) sidebarToggle.setAttribute("aria-expanded", String(open));
+}
+
+function setCalendarMonth(dateKey) {
+  if (dateKey) {
+    const parts = dateKey.match(/^(\d{4})-(\d{2})/);
+    if (parts) { calendarMonth = { year: Number(parts[1]), month0: Number(parts[2]) - 1 }; return; }
+  }
+  const today = new Date();
+  calendarMonth = { year: today.getFullYear(), month0: today.getMonth() };
+}
+
+function renderCalendar(documents) {
+  calendarDocuments = documents;
+  if (!calendarMonth) setCalendarMonth(null);
+  const { year, month0 } = calendarMonth;
+  const markedDates = new Set();
+  for (const doc of documents) {
+    const key = documentDateKey(doc.date);
+    if (key) markedDates.add(key);
+  }
+  const hadFocus = calendarDays.contains(document.activeElement);
+  calendarMonthLabel.textContent = monthFormatter.format(new Date(year, month0, 1));
+  // Build weekday header; 2023-01-01 is a Sunday and serves as the anchor.
+  while (calendarWeekdays.firstChild) calendarWeekdays.removeChild(calendarWeekdays.firstChild);
+  for (let i = 0; i < 7; i++) {
+    const dow = (CALENDAR_WEEK_START + i) % 7;
+    const anchor = new Date(2023, 0, 1 + ((dow - 0 + 7) % 7));
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.setAttribute("abbr", weekdayLongFormatter.format(anchor));
+    th.textContent = weekdayNarrowFormatter.format(anchor);
+    calendarWeekdays.appendChild(th);
+  }
+  // Build day grid
+  while (calendarDays.firstChild) calendarDays.removeChild(calendarDays.firstChild);
+  const weeks = buildCalendarWeeks(year, month0, CALENDAR_WEEK_START);
+  const today = toDateKey(new Date());
+  let firstMarked = null;
+  // Determine which date gets tabindex=0
+  const focusInMonth = calendarFocusDate && calendarFocusDate.startsWith(`${String(year).padStart(4, "0")}-${String(month0 + 1).padStart(2, "0")}`);
+  for (const week of weeks) {
+    const tr = document.createElement("tr");
+    for (const day of week) {
+      const td = document.createElement("td");
+      td.setAttribute("role", "gridcell");
+      if (day !== null) {
+        const key = toDateKey(new Date(year, month0, day));
+        const isMarked = markedDates.has(key);
+        if (isMarked && !firstMarked) firstMarked = key;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "calendar-day" + (isMarked ? " has-documents" : "");
+        btn.dataset.date = key;
+        btn.textContent = String(day);
+        // tabindex: only the focus date (or fallback) gets 0
+        const isFocusTarget = focusInMonth ? key === calendarFocusDate : false;
+        btn.tabIndex = isFocusTarget ? 0 : -1;
+        if (isMarked) {
+          const dot = document.createElement("span");
+          dot.className = "calendar-dot";
+          dot.setAttribute("aria-hidden", "true");
+          btn.appendChild(dot);
+          const label = (@@calendar_day_has_documents@@).replace("{date}", new Intl.DateTimeFormat(@@date_locale@@, { dateStyle: "long" }).format(new Date(`${key}T00:00:00`)));
+          btn.setAttribute("aria-label", label);
+          btn.setAttribute("aria-pressed", String(key === selectedDate));
+        } else {
+          btn.setAttribute("aria-disabled", "true");
+        }
+        if (key === today) btn.setAttribute("aria-current", "date");
+        td.appendChild(btn);
+      }
+      tr.appendChild(td);
+    }
+    calendarDays.appendChild(tr);
+  }
+  // If no focus target was set, assign tabindex=0 to firstMarked or day 1
+  if (!focusInMonth) {
+    const fallbackKey = firstMarked || toDateKey(new Date(year, month0, 1));
+    const fallbackBtn = calendarDays.querySelector(`[data-date="${fallbackKey}"]`);
+    if (fallbackBtn) fallbackBtn.tabIndex = 0;
+  }
+  calendarEmptyHint.hidden = markedDates.size > 0;
+  if (hadFocus) {
+    const focusBtn = calendarDays.querySelector('[tabindex="0"]');
+    if (focusBtn) focusBtn.focus();
+  }
+}
+
+function renderDateFilterStatus() {
+  dateFilterStatus.hidden = selectedDate === null;
+  if (selectedDate) {
+    const formatted = new Intl.DateTimeFormat(@@date_locale@@, { dateStyle: "long" }).format(new Date(`${selectedDate}T00:00:00`));
+    dateFilterLabel.textContent = (@@calendar_filter_active@@).replace("{date}", formatted);
+  }
+}
+
+function selectCalendarDate(key) {
+  if (!key) return;
+  const markedDates = new Set();
+  for (const doc of calendarDocuments) {
+    const k = documentDateKey(doc.date);
+    if (k) markedDates.add(k);
+  }
+  if (!markedDates.has(key)) return;
+  selectedDate = selectedDate === key ? null : key;
+  calendarFocusDate = key;
+  applyDocumentFilters();
+  if (selectedDate !== null && document.body.classList.contains("sidebar-open")) {
+    setSidebarOpen(false);
+    clearDateFilterButton.focus();
+  }
 }
 
 const documentDialogEyebrow = document.querySelector("#document-dialog-eyebrow");
@@ -1130,7 +1333,12 @@ async function revealDocument(folderId, documentId) {
   if (folderId !== currentFolderId) {
     await openFolder(folderId);
   }
-  const details = document.querySelector(`details[data-document-id="${CSS.escape(documentId)}"]`);
+  let details = document.querySelector(`details[data-document-id="${CSS.escape(documentId)}"]`);
+  if (!details && selectedDate !== null) {
+    selectedDate = null;
+    applyDocumentFilters();
+    details = document.querySelector(`details[data-document-id="${CSS.escape(documentId)}"]`);
+  }
   if (details) {
     details.open = true;
     details.scrollIntoView({block: "start"});
@@ -1144,6 +1352,7 @@ async function openFolder(folderId, updateHash = true) {
     throw new Error("Folder not found");
   }
   const folder = await response.json();
+  const previousFolderId = currentFolderId;
   currentFolderId = folder.id;
   setActiveSidebarFolder(currentFolderId);
   currentDocuments = folder.documents || [];
@@ -1151,11 +1360,19 @@ async function openFolder(folderId, updateHash = true) {
   resetDocumentSearch();
   documentSearch.value = "";
   selectedFilterTags.clear();
+  selectedDate = null;
+  if (folder.id !== previousFolderId) {
+    const validDates = (folder.documents || []).map(d => documentDateKey(d.date)).filter(Boolean).sort();
+    const newest = validDates[validDates.length - 1] || null;
+    setCalendarMonth(newest);
+    calendarFocusDate = newest;
+  }
+  calendarPanel.hidden = false;
   document.querySelector("#current-folder-name").textContent = folder.name;
   document.querySelector("#current-folder-description").textContent =
     folder.description || @@no_description@@;
   renderTagFilter();
-  renderDocuments(currentDocuments);
+  applyDocumentFilters();
   homeView.hidden = true;
   folderView.hidden = false;
   document.title = format(@@folder_title@@, { name: folder.name });
@@ -1163,6 +1380,12 @@ async function openFolder(folderId, updateHash = true) {
 }
 
 function showHome(updateHash = true) {
+  selectedDate = null;
+  calendarMonth = null;
+  calendarFocusDate = null;
+  calendarDocuments = [];
+  calendarPanel.hidden = true;
+  dateFilterStatus.hidden = true;
   currentFolderId = null;
   setActiveSidebarFolder(null);
   currentDocuments = [];
@@ -1519,6 +1742,50 @@ if (newFolderSidebarBtn) {
 if (topbarNewFolderButton) {
   topbarNewFolderButton.addEventListener("click", () => dialog.showModal());
 }
+
+calendarPrev.addEventListener("click", function() {
+  if (!calendarMonth) return;
+  const d = new Date(calendarMonth.year, calendarMonth.month0 - 1, 1);
+  calendarMonth = { year: d.getFullYear(), month0: d.getMonth() };
+  renderCalendar(calendarDocuments);
+});
+
+calendarNext.addEventListener("click", function() {
+  if (!calendarMonth) return;
+  const d = new Date(calendarMonth.year, calendarMonth.month0 + 1, 1);
+  calendarMonth = { year: d.getFullYear(), month0: d.getMonth() };
+  renderCalendar(calendarDocuments);
+});
+
+calendarDays.addEventListener("click", function(event) {
+  const btn = event.target.closest(".calendar-day");
+  if (btn) selectCalendarDate(btn.dataset.date);
+});
+
+calendarDays.addEventListener("keydown", function(event) {
+  const btn = event.target.closest(".calendar-day");
+  if (!btn) return;
+  const isRtl = document.documentElement.dir === "rtl";
+  const next = nextCalendarFocus(btn.dataset.date, event.key, isRtl, CALENDAR_WEEK_START);
+  if (next === null) return;
+  event.preventDefault();
+  calendarFocusDate = next;
+  const nextParts = next.match(/^(\d{4})-(\d{2})/);
+  if (nextParts) {
+    const ny = Number(nextParts[1]), nm0 = Number(nextParts[2]) - 1;
+    if (!calendarMonth || ny !== calendarMonth.year || nm0 !== calendarMonth.month0) {
+      calendarMonth = { year: ny, month0: nm0 };
+    }
+  }
+  renderCalendar(calendarDocuments);
+  const target = calendarDays.querySelector(`[data-date="${next}"]`);
+  if (target) target.focus();
+});
+
+clearDateFilterButton.addEventListener("click", function() {
+  selectedDate = null;
+  applyDocumentFilters();
+});
 
 async function start() {
   await loadFolders();
