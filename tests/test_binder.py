@@ -1,10 +1,14 @@
 import io
 import json
+import unittest
 from http import HTTPStatus
 from unittest.mock import Mock, patch
-import unittest
 
+from binder.ask import AskDisabled
 from binder.binder import Binder
+from binder.embeddings import ChatUnavailable
+
+_DEFAULT_REMOVE_RESULT = {"id": "document"}
 
 
 class BinderConfigTests(unittest.TestCase):
@@ -217,7 +221,7 @@ class BinderAttachmentTests(unittest.TestCase):
 
 
 class BinderDeleteTests(unittest.TestCase):
-    def delete(self, path, remove_file_result={"id": "document"}):
+    def delete(self, path, remove_file_result=_DEFAULT_REMOVE_RESULT):
         handler = object.__new__(Binder)
         handler.path = path
         handler.store = Mock()
@@ -622,6 +626,86 @@ class BinderSearchTests(unittest.TestCase):
                     {"error": error}, HTTPStatus.BAD_REQUEST
                 )
                 handler.store.search.assert_not_called()
+
+
+class BinderAskTests(unittest.TestCase):
+    def post(self, body: bytes, store=None):
+        handler = object.__new__(Binder)
+        handler.path = "/api/ask"
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler.store = store if store is not None else Mock()
+        handler._send_json = Mock()
+        handler.do_POST()
+        return handler
+
+    def test_valid_request_routes_to_store_ask(self):
+        store = Mock()
+        store.ask.return_value = {"status": "ok", "answer": "5000 [1]"}
+
+        handler = self.post(
+            json.dumps({"question": "What is the rent?", "folder_id": "f1", "limit": 3}).encode(),
+            store=store,
+        )
+
+        store.ask.assert_called_once_with("What is the rent?", folder_id="f1", limit=3)
+        handler._send_json.assert_called_once_with({"status": "ok", "answer": "5000 [1]"})
+
+    def test_defaults(self):
+        store = Mock()
+        store.ask.return_value = {"status": "ok"}
+
+        self.post(json.dumps({"question": "What is the rent?"}).encode(), store=store)
+
+        store.ask.assert_called_once_with("What is the rent?", folder_id=None, limit=5)
+
+    def test_rejects_invalid_requests_without_asking(self):
+        cases = [
+            ({"question": ""}, "invalid_question"),
+            ({"question": "   "}, "invalid_question"),
+            ({"question": "x" * 1001}, "invalid_question"),
+            ({"question": 42}, "invalid_question"),
+            ({}, "invalid_question"),
+            ({"question": "ok", "limit": 0}, "invalid_limit"),
+            ({"question": "ok", "limit": 11}, "invalid_limit"),
+            ({"question": "ok", "limit": "3"}, "invalid_limit"),
+            ({"question": "ok", "limit": True}, "invalid_limit"),
+            ({"question": "ok", "extra": 1}, "invalid_request"),
+            ({"question": "ok", "folder_id": ""}, "invalid_request"),
+        ]
+        for payload, code in cases:
+            with self.subTest(payload=payload):
+                store = Mock()
+                handler = self.post(json.dumps(payload).encode(), store=store)
+
+                handler._send_json.assert_called_once_with({"error": code}, HTTPStatus.BAD_REQUEST)
+                store.ask.assert_not_called()
+
+    def test_empty_body_is_invalid_request(self):
+        store = Mock()
+
+        handler = self.post(b"", store=store)
+
+        handler._send_json.assert_called_once_with({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+        store.ask.assert_not_called()
+
+    def test_generation_unavailable_returns_503(self):
+        store = Mock()
+        store.ask.side_effect = ChatUnavailable("down")
+
+        handler = self.post(json.dumps({"question": "What is the rent?"}).encode(), store=store)
+
+        handler._send_json.assert_called_once_with(
+            {"error": "generation_unavailable"}, HTTPStatus.SERVICE_UNAVAILABLE
+        )
+
+    def test_ask_disabled_returns_503(self):
+        store = Mock()
+        store.ask.side_effect = AskDisabled("off")
+
+        handler = self.post(json.dumps({"question": "What is the rent?"}).encode(), store=store)
+
+        handler._send_json.assert_called_once_with({"error": "ask_disabled"}, HTTPStatus.SERVICE_UNAVAILABLE)
 
 
 if __name__ == "__main__":

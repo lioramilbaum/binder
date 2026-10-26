@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import BinaryIO, Sequence, Union
+from typing import BinaryIO
 from uuid import uuid4
 
 from sqlalchemy import func, text
@@ -15,13 +16,6 @@ from .config import OLLAMA_QUERY_TIMEOUT, SEMANTIC_MIN_SIMILARITY
 from .database import session_scope
 from .embeddings import EmbeddingUnavailable, OllamaClient, pending_document_ids
 from .large_objects import create_large_object, hash_stream, read_large_object
-from .search import (
-    CANDIDATE_LIMIT,
-    MIN_SEMANTIC_QUERY_LENGTH,
-    build_tsquery,
-    reciprocal_rank_fusion,
-    semantic_candidates,
-)
 from .models import (
     DOCUMENT_TYPE_AI,
     DOCUMENT_TYPE_REGULAR,
@@ -34,6 +28,13 @@ from .models import (
     LinkType,
     Tag,
 )
+from .search import (
+    CANDIDATE_LIMIT,
+    MIN_SEMANTIC_QUERY_LENGTH,
+    build_tsquery,
+    reciprocal_rank_fusion,
+    semantic_candidates,
+)
 from .tags import normalize_tags, tag_key
 from .text_extraction import extract_text
 from .whatsapp import WhatsAppChat
@@ -41,7 +42,6 @@ from .whatsapp import WhatsAppChat
 
 class DocumentRuleError(ValueError):
     """Raised when a document operation violates business rules."""
-    pass
 
 
 class LinkError(ValueError):
@@ -52,7 +52,7 @@ class LinkError(ValueError):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _resolve_tags(session: Session, names: list[str]) -> list[Tag]:
@@ -435,7 +435,7 @@ def update_document(
         return _document_to_dict(document)
 
 
-def _read_upload_bytes(content: Union[bytes, BinaryIO]) -> bytes:
+def _read_upload_bytes(content: bytes | BinaryIO) -> bytes:
     if isinstance(content, bytes):
         return content
     content.seek(0)
@@ -449,7 +449,7 @@ def add_files(
     factory: sessionmaker[Session],
     folder_id: str,
     document_id: str,
-    uploads: list[tuple[str, str, Union[bytes, BinaryIO]]],
+    uploads: list[tuple[str, str, bytes | BinaryIO]],
 ) -> list[dict[str, object]] | None:
     """Store attachments for a document, returning their metadata."""
 
@@ -1028,3 +1028,53 @@ def search_documents(
             }
         )
     return _search_result(query, results, semantic, pending)
+
+
+def documents_for_context(
+    factory: sessionmaker[Session], ids: Sequence[str]
+) -> list[dict[str, object]]:
+    """Load full document text for ``ids``, in the given order. Missing ids are skipped."""
+
+    with factory() as session:
+        documents = {
+            document.id: document
+            for document in session.query(Document)
+            .options(selectinload(Document.tags), selectinload(Document.folder))
+            .filter(Document.id.in_(ids))
+            .all()
+        }
+        attachments: dict[str, list[dict[str, object]]] = {}
+        for document_id, name, text_content in (
+            session.query(DocumentFile.document_id, DocumentFile.name, DocumentFile.text_content)
+            .filter(
+                DocumentFile.document_id.in_(ids),
+                DocumentFile.text_content.is_not(None),
+                DocumentFile.text_content != "",
+            )
+            .order_by(DocumentFile.created_at, DocumentFile.id)
+            .all()
+        ):
+            attachments.setdefault(document_id, []).append({"name": name, "text": text_content})
+
+        result: list[dict[str, object]] = []
+        for document_id in ids:
+            document = documents.get(document_id)
+            if document is None:
+                continue
+            result.append(
+                {
+                    "id": document.id,
+                    "folder_id": document.folder_id,
+                    "folder_name": document.folder.name,
+                    "name": document.name,
+                    "date": document.date,
+                    "time": document.time,
+                    "type": document.type,
+                    "description": document.description,
+                    "summary": document.summary,
+                    "tags": [tag.name for tag in document.tags],
+                    "content": document.content,
+                    "attachments": attachments.get(document_id, []),
+                }
+            )
+        return result

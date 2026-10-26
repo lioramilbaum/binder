@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 from binder.config import EMBEDDING_MAX_CHARS
 from binder.embeddings import (
+    ChatUnavailable,
     EmbeddingUnavailable,
     EmbeddingWorker,
     OllamaClient,
@@ -65,10 +66,8 @@ class OllamaClientTests(unittest.TestCase):
 
     def test_connection_errors_become_embedding_unavailable(self):
         for error in (urllib.error.URLError("refused"), TimeoutError("slow")):
-            with self.subTest(error=type(error).__name__):
-                with patch("binder.embeddings.urllib.request.urlopen", side_effect=error):
-                    with self.assertRaises(EmbeddingUnavailable):
-                        self.client().embed(["x"], timeout=1)
+            with self.subTest(error=type(error).__name__), patch("binder.embeddings.urllib.request.urlopen", side_effect=error), self.assertRaises(EmbeddingUnavailable):
+                self.client().embed(["x"], timeout=1)
 
     def test_wrong_dimension_becomes_embedding_unavailable(self):
         with patch("binder.embeddings.urllib.request.urlopen") as urlopen:
@@ -80,9 +79,8 @@ class OllamaClientTests(unittest.TestCase):
     def test_malformed_json_becomes_embedding_unavailable(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b"<html>not json</html>"
-        with patch("binder.embeddings.urllib.request.urlopen", return_value=response):
-            with self.assertRaises(EmbeddingUnavailable):
-                self.client().embed(["x"], timeout=1)
+        with patch("binder.embeddings.urllib.request.urlopen", return_value=response), self.assertRaises(EmbeddingUnavailable):
+            self.client().embed(["x"], timeout=1)
 
     def test_non_finite_values_are_rejected(self):
         with patch("binder.embeddings.urllib.request.urlopen") as urlopen:
@@ -95,12 +93,10 @@ class OllamaClientTests(unittest.TestCase):
         client = self.client()
         start = 1000.0
         with patch("binder.embeddings.urllib.request.urlopen", side_effect=urllib.error.URLError("down")) as urlopen:
-            with patch("binder.embeddings.time.monotonic", return_value=start):
-                with self.assertRaises(EmbeddingUnavailable):
-                    client.embed(["first"], timeout=1)
-            with patch("binder.embeddings.time.monotonic", return_value=start + 5):
-                with self.assertRaises(EmbeddingUnavailable):
-                    client.embed(["second"], timeout=1)
+            with patch("binder.embeddings.time.monotonic", return_value=start), self.assertRaises(EmbeddingUnavailable):
+                client.embed(["first"], timeout=1)
+            with patch("binder.embeddings.time.monotonic", return_value=start + 5), self.assertRaises(EmbeddingUnavailable):
+                client.embed(["second"], timeout=1)
             self.assertEqual(urlopen.call_count, 1)
 
             urlopen.side_effect = None
@@ -108,6 +104,62 @@ class OllamaClientTests(unittest.TestCase):
             with patch("binder.embeddings.time.monotonic", return_value=start + 31):
                 self.assertEqual(client.embed(["third"], timeout=1), [[0.1, 0.2, 0.3]])
             self.assertEqual(urlopen.call_count, 2)
+
+
+class OllamaChatTests(unittest.TestCase):
+    def client(self):
+        return OllamaClient("http://ollama.test:11434/", "bge-m3", 3)
+
+    def test_chat_posts_to_api_chat_without_streaming(self):
+        messages = [{"role": "user", "content": "What is the rent?"}]
+        with patch("binder.embeddings.urllib.request.urlopen") as urlopen:
+            urlopen.return_value = ok_response({"message": {"role": "assistant", "content": "5000 [1]"}})
+
+            answer = self.client().chat(
+                messages, model="gemma3:4b", timeout=9, options={"num_ctx": 8192}
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://ollama.test:11434/api/chat")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.get_header("Content-type"), "application/json")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 9)
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "model": "gemma3:4b",
+                "messages": messages,
+                "stream": False,
+                "options": {"num_ctx": 8192},
+            },
+        )
+        self.assertEqual(answer, "5000 [1]")
+
+    def test_chat_errors_become_chat_unavailable(self):
+        http_error = urllib.error.HTTPError("http://ollama.test", 404, "not found", None, None)
+        bad_bodies = [b"<html>not json</html>", b'{"message": {}}', b'{"message": {"content": ""}}', b'{"done": true}']
+        with patch("binder.embeddings.urllib.request.urlopen", side_effect=urllib.error.URLError("refused")), self.assertRaises(ChatUnavailable):
+            self.client().chat([], model="m", timeout=1)
+        with patch("binder.embeddings.urllib.request.urlopen", side_effect=TimeoutError("slow")), self.assertRaises(ChatUnavailable):
+            self.client().chat([], model="m", timeout=1)
+        with patch("binder.embeddings.urllib.request.urlopen", side_effect=http_error), self.assertRaises(ChatUnavailable):
+            self.client().chat([], model="m", timeout=1)
+        for body in bad_bodies:
+            with self.subTest(body=body):
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = body
+                with patch("binder.embeddings.urllib.request.urlopen", return_value=response), self.assertRaises(ChatUnavailable):
+                    self.client().chat([], model="m", timeout=1)
+
+    def test_chat_failure_does_not_trip_embedding_breaker(self):
+        client = self.client()
+        with patch("binder.embeddings.urllib.request.urlopen", side_effect=urllib.error.URLError("down")), self.assertRaises(ChatUnavailable):
+            client.chat([], model="m", timeout=1)
+        with patch("binder.embeddings.urllib.request.urlopen") as urlopen:
+            urlopen.return_value = ok_response({"embeddings": [[0.1, 0.2, 0.3]]})
+
+            self.assertEqual(client.embed(["x"], timeout=1), [[0.1, 0.2, 0.3]])
+            self.assertEqual(urlopen.call_count, 1)
 
 
 class TextHelperTests(unittest.TestCase):
@@ -182,13 +234,12 @@ class EmbeddingWorkerTests(unittest.TestCase):
             self.assertTrue(worker.is_alive())
 
     def test_outage_is_logged_once_and_worker_keeps_running(self):
-        with patch("binder.embeddings.embed_pending", side_effect=EmbeddingUnavailable("down")) as embed:
-            with self.assertLogs("binder.embeddings", level="WARNING") as logs:
-                worker = self.make_worker()
-                worker.start()
-                self.assertTrue(wait_for(lambda: embed.call_count >= 1))
-                worker.notify()
-                self.assertTrue(wait_for(lambda: embed.call_count >= 2))
+        with patch("binder.embeddings.embed_pending", side_effect=EmbeddingUnavailable("down")) as embed, self.assertLogs("binder.embeddings", level="WARNING") as logs:
+            worker = self.make_worker()
+            worker.start()
+            self.assertTrue(wait_for(lambda: embed.call_count >= 1))
+            worker.notify()
+            self.assertTrue(wait_for(lambda: embed.call_count >= 2))
         self.assertEqual(len(logs.records), 1)
 
     def test_stop_joins_the_thread(self):

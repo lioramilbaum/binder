@@ -13,8 +13,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from fnmatch import fnmatch
-from typing import Sequence
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload, sessionmaker
@@ -22,7 +22,6 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 from .config import EMBEDDING_MAX_CHARS, OLLAMA_DOCUMENT_TIMEOUT
 from .database import session_scope
 from .models import Document, DocumentFile
-
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,10 @@ class EmbeddingUnavailable(Exception):
     """Raised when embeddings cannot be computed right now."""
 
 
+class ChatUnavailable(Exception):
+    """Raised when a chat completion cannot be generated right now."""
+
+
 def _prefixes_for(model: str) -> tuple[str, str]:
     for pattern, prefixes in _MODEL_PREFIXES.items():
         if fnmatch(model, pattern):
@@ -55,7 +58,7 @@ def _prefixes_for(model: str) -> tuple[str, str]:
 
 
 class OllamaClient:
-    """Minimal client for Ollama's ``/api/embed`` endpoint with a short circuit breaker."""
+    """Minimal client for Ollama's ``/api/embed`` and ``/api/chat`` endpoints with a short circuit breaker."""
 
     def __init__(self, base_url: str, model: str, dimensions: int):
         self.base_url = base_url.rstrip("/")
@@ -71,23 +74,49 @@ class OllamaClient:
 
         query_prefix, doc_prefix = _prefixes_for(self.model)
         prefix = query_prefix if kind == "query" else doc_prefix
-        body = json.dumps(
-            {"model": self.model, "input": [prefix + item for item in texts], "truncate": True}
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.base_url}/api/embed",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+            payload = self._post_json(
+                "/api/embed",
+                {"model": self.model, "input": [prefix + item for item in texts], "truncate": True},
+                timeout,
+            )
             return self._parse(payload, len(texts))
         except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError) as error:
             with self._lock:
                 self._down_until = time.monotonic() + _CIRCUIT_COOLDOWN_SECONDS
             raise EmbeddingUnavailable(f"Ollama embedding request failed: {error}") from error
+
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str,
+        timeout: int,
+        options: dict | None = None,
+    ) -> str:
+        """Return one non-streamed chat completion. Does not touch the embedding breaker."""
+
+        body = {"model": model, "messages": messages, "stream": False, "options": options or {}}
+        try:
+            payload = self._post_json("/api/chat", body, timeout)
+            message = payload.get("message") if isinstance(payload, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("missing chat content")
+            return content
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError, ValueError) as error:
+            raise ChatUnavailable(f"Ollama chat request failed: {error}") from error
+
+    def _post_json(self, path: str, body: dict, timeout: int) -> object:
+        data = json.dumps(body).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
 
     def _parse(self, payload: object, count: int) -> list[list[float]]:
         embeddings = payload.get("embeddings") if isinstance(payload, dict) else None

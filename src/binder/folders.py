@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from typing import BinaryIO, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import BinaryIO
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import folder_repository
+from . import ask, folder_repository
+from .config import ASK_DEFAULT_DOCUMENTS
 from .database import create_session_factory
 
 
 class Folders:
-    def __init__(self, factory: Optional[sessionmaker[Session]] = None):
+    def __init__(self, factory: sessionmaker[Session] | None = None):
         self._factory = factory
         self.embedder = None
         self.embedding_worker = None
+        self.chat_client = None
 
     @property
     def factory(self) -> sessionmaker[Session]:
@@ -24,6 +27,9 @@ class Folders:
         self.embedder = embedder
         self.embedding_worker = worker
 
+    def enable_ask(self, chat_client) -> None:
+        self.chat_client = chat_client
+
     def _changed(self) -> None:
         if self.embedding_worker is not None:
             self.embedding_worker.notify()
@@ -31,7 +37,7 @@ class Folders:
     def search(
         self,
         query: str,
-        folder_id: Optional[str] = None,
+        folder_id: str | None = None,
         limit: int = 50,
         embedder=None,
         mode: str = "hybrid",
@@ -42,10 +48,27 @@ class Folders:
             self.factory, query, folder_id, embedder=embedder, mode=mode, limit=limit
         )
 
+    def ask(
+        self,
+        question: str,
+        folder_id: str | None = None,
+        limit: int = ASK_DEFAULT_DOCUMENTS,
+    ) -> dict[str, object]:
+        if self.chat_client is None:
+            raise ask.AskDisabled("Ask is not enabled")
+        return ask.answer_question(
+            self.factory,
+            self.chat_client,
+            question,
+            embedder=self.embedder,
+            folder_id=folder_id,
+            limit=limit,
+        )
+
     def list(self) -> list[dict[str, object]]:
         return folder_repository.list_folders(self.factory)
 
-    def get(self, folder_id: str) -> Optional[dict[str, object]]:
+    def get(self, folder_id: str) -> dict[str, object] | None:
         return folder_repository.get_folder(self.factory, folder_id)
 
     def create(self, name: str, description: str = "") -> dict[str, object]:
@@ -66,7 +89,7 @@ class Folders:
         source_url: str | None = None,
         transcript_sha256: str | None = None,
         source_first_message_at: str | None = None,
-    ) -> Optional[dict[str, object]]:
+    ) -> dict[str, object] | None:
         document = folder_repository.create_document(
             self.factory, folder_id, date, name, description, content, time, summary, tags=tags,
             document_type=document_type, provider=provider, source_url=source_url,
@@ -80,8 +103,8 @@ class Folders:
         self,
         folder_id: str,
         document_id: str,
-        uploads: list[tuple[str, str, Union[bytes, BinaryIO]]],
-    ) -> Optional[list[dict[str, object]]]:
+        uploads: list[tuple[str, str, bytes | BinaryIO]],
+    ) -> list[dict[str, object]] | None:
         files = folder_repository.add_files(self.factory, folder_id, document_id, uploads)
         if files is not None:
             self._changed()
@@ -89,7 +112,7 @@ class Folders:
 
     def remove_file(
         self, folder_id: str, document_id: str, file_id: str
-    ) -> Optional[dict[str, object]]:
+    ) -> dict[str, object] | None:
         document = folder_repository.remove_file(self.factory, folder_id, document_id, file_id)
         if document is not None:
             self._changed()
@@ -97,7 +120,7 @@ class Folders:
 
     def update_document(
         self, folder_id: str, document_id: str, updates: dict[str, str]
-    ) -> Optional[dict[str, object]]:
+    ) -> dict[str, object] | None:
         document = folder_repository.update_document(self.factory, folder_id, document_id, updates)
         if document is not None:
             self._changed()
@@ -105,7 +128,7 @@ class Folders:
 
     def get_file(
         self, folder_id: str, document_id: str, file_id: str
-    ) -> Optional[tuple[bytes, str, str]]:
+    ) -> tuple[bytes, str, str] | None:
         return folder_repository.get_file(self.factory, folder_id, document_id, file_id)
 
     def duplicates(self) -> dict[str, object]:
@@ -123,10 +146,10 @@ class Folders:
 
     def add_link(
         self, folder_id: str, document_id: str, target_document_id: str, link_type_id: str
-    ) -> Optional[dict[str, object]]:
+    ) -> dict[str, object] | None:
         return folder_repository.add_document_link(
             self.factory, folder_id, document_id, target_document_id, link_type_id
         )
 
-    def remove_link(self, folder_id: str, document_id: str, link_id: str) -> Optional[dict[str, object]]:
+    def remove_link(self, folder_id: str, document_id: str, link_id: str) -> dict[str, object] | None:
         return folder_repository.remove_document_link(self.factory, folder_id, document_id, link_id)

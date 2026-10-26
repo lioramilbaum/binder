@@ -16,6 +16,9 @@ services:
       BINDER_EMBEDDING_MODEL: ${BINDER_EMBEDDING_MODEL:-bge-m3}
       BINDER_EMBEDDING_DIMENSIONS: ${BINDER_EMBEDDING_DIMENSIONS:-1024}
       BINDER_SEMANTIC_MIN_SIMILARITY: ${BINDER_SEMANTIC_MIN_SIMILARITY:-}
+      BINDER_ASK: ${BINDER_ASK:-}
+      BINDER_CHAT_MODEL: ${BINDER_CHAT_MODEL:-gemma3:4b}
+      BINDER_CHAT_TIMEOUT: ${BINDER_CHAT_TIMEOUT:-}
     ports:
       - "127.0.0.1:${APP_PORT:-8000}:8000"
     depends_on:
@@ -59,5 +62,7 @@ services:
       - ./.ollama-data:/root/.ollama
     environment:
       BINDER_EMBEDDING_MODEL: ${BINDER_EMBEDDING_MODEL:-bge-m3}
+      BINDER_ASK: ${BINDER_ASK:-}
+      BINDER_CHAT_MODEL: ${BINDER_CHAT_MODEL:-gemma3:4b}
     ports:
       - "127.0.0.1:11434:11434"

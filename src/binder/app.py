@@ -3,6 +3,8 @@ from http.server import ThreadingHTTPServer
 
 from .binder import Binder
 from .config import (
+    ASK_ENABLED,
+    CHAT_MODEL,
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
     OLLAMA_BASE_URL,
@@ -17,12 +19,16 @@ def run(host: str | None = None, port: int | None = None) -> None:
     server = ThreadingHTTPServer((host, port), Binder)
     print(f"Binder running at http://{host}:{port}")
     worker = None
-    if SEMANTIC_SEARCH_ENABLED:
+    if SEMANTIC_SEARCH_ENABLED or ASK_ENABLED:
         client = OllamaClient(OLLAMA_BASE_URL, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS)
+    if SEMANTIC_SEARCH_ENABLED:
         worker = EmbeddingWorker(Binder.store.factory, client)
         Binder.store.enable_semantic_search(client, worker)
         worker.start()
         print(f"Semantic search: {EMBEDDING_MODEL} via {OLLAMA_BASE_URL}")
+    if ASK_ENABLED:
+        Binder.store.enable_ask(client)
+        print(f"Ask: {CHAT_MODEL} via {OLLAMA_BASE_URL}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
