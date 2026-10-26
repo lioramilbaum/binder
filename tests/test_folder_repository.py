@@ -7,14 +7,14 @@ from unittest.mock import patch
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
-from binder import folder_repository
-from binder import dedupe
+from binder import dedupe, folder_repository
 from binder.database import Base
 from binder.folder_repository import _file_to_dict, effective_content_type
 from binder.large_objects import RELEASE_FUNCTION_SQL, RELEASE_TRIGGER_SQL
-from binder.models import DocumentFile
+from binder.models import DOCUMENT_TYPE_REGULAR, DocumentFile
 
 
 class FolderRepositoryTests(unittest.TestCase):
@@ -299,7 +299,7 @@ class FolderRepositoryTests(unittest.TestCase):
     def test_existing_tag_is_reused_ignoring_case_and_spacing(self):
         folder = folder_repository.create_folder(self.factory, "מסמכים")
 
-        doc_a = folder_repository.create_document(
+        folder_repository.create_document(
             self.factory, folder["id"], "2026-08-30", "א", tags=["Budget"]
         )
         doc_b = folder_repository.create_document(
@@ -342,6 +342,61 @@ class FolderRepositoryTests(unittest.TestCase):
         doc = folders[0]["documents"][0]
 
         self.assertEqual(doc["tags"], ["Important"])
+
+    def test_documents_for_context_returns_full_text_in_requested_order(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        a = folder_repository.create_document(
+            self.factory, folder["id"], "2026-01-01", "A", description="desc a",
+            content="body a", time="10:00", summary="sum a", tags=["rent"],
+        )
+        b = folder_repository.create_document(
+            self.factory, folder["id"], "2026-02-01", "B", content="body b", tags=["parking"],
+        )
+
+        documents = folder_repository.documents_for_context(
+            self.factory, [b["id"], "missing", a["id"]]
+        )
+
+        self.assertEqual([document["id"] for document in documents], [b["id"], a["id"]])
+        self.assertEqual(
+            documents[1],
+            {
+                "id": a["id"],
+                "folder_id": folder["id"],
+                "folder_name": "Case",
+                "name": "A",
+                "date": "2026-01-01",
+                "time": "10:00",
+                "type": DOCUMENT_TYPE_REGULAR,
+                "description": "desc a",
+                "summary": "sum a",
+                "tags": ["rent"],
+                "content": "body a",
+                "attachments": [],
+            },
+        )
+
+    def test_documents_for_context_includes_attachment_text(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        document = folder_repository.create_document(self.factory, folder["id"], "2026-01-01", "A")
+        with self.factory() as session:
+            session.add_all([
+                DocumentFile(
+                    id="file-1", document_id=document["id"], name="minutes.txt",
+                    content_type="text/plain", size=15, data_oid=0,
+                    text_content="Parking minutes", created_at="2026-01-01T00:00:00+00:00",
+                ),
+                DocumentFile(
+                    id="file-2", document_id=document["id"], name="empty.txt",
+                    content_type="text/plain", size=0, data_oid=0,
+                    text_content="", created_at="2026-01-01T00:00:01+00:00",
+                ),
+            ])
+            session.commit()
+
+        [loaded] = folder_repository.documents_for_context(self.factory, [document["id"]])
+
+        self.assertEqual(loaded["attachments"], [{"name": "minutes.txt", "text": "Parking minutes"}])
 
 
 class DocumentLinkRepositoryTests(unittest.TestCase):
@@ -504,7 +559,7 @@ class DocumentLinkRepositoryTests(unittest.TestCase):
 
         # Verify A also has no links
         result_a = folder_repository.get_folder(self.factory, folder["id"])
-        doc_a = [d for d in result_a["documents"] if d["id"] == docA["id"]][0]
+        doc_a = next(d for d in result_a["documents"] if d["id"] == docA["id"])
         self.assertEqual(len(doc_a.get("links", [])), 0)
 
         # Unknown link_id returns None
@@ -608,7 +663,7 @@ class DocumentTypeMigrationTests(unittest.TestCase):
             self.assertEqual(ai_doc[9], "2023-11-14T22:13:20.250000+00:00")
 
             # Verify ai_threads table is gone
-            with self.assertRaises(Exception):  # Table doesn't exist
+            with self.assertRaises(OperationalError):  # Table doesn't exist
                 connection.execute(text("SELECT COUNT(*) FROM ai_threads"))
 
     def test_migration_downgrade_restores_ai_threads(self):

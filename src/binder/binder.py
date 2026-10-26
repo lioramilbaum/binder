@@ -1,5 +1,5 @@
-import json
 import hashlib
+import json
 import re
 import secrets
 import threading
@@ -12,10 +12,15 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from tempfile import TemporaryFile
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 from urllib.parse import parse_qs, quote, urlparse
 
+from .ask import AskDisabled
+from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .config import (
+    ASK_DEFAULT_DOCUMENTS,
+    ASK_MAX_DOCUMENTS,
+    ASK_MAX_QUESTION_LENGTH,
     GOOGLE_API_KEY,
     GOOGLE_CLIENT_ID,
     GOOGLE_DRIVE_IMPORT_ENABLED,
@@ -23,15 +28,28 @@ from .config import (
     MAX_UPLOAD_SIZE,
     STATIC_DIR,
 )
+from .embeddings import ChatUnavailable
+from .folder_repository import (
+    DocumentRuleError,
+    LinkError,
+    add_document_link,
+    create_link_type,
+    remove_document_link,
+)
 from .folders import Folders
-from .folder_repository import DocumentRuleError, LinkError, create_link_type, add_document_link, remove_document_link
-from .chatgpt_share import ShareImportError, SharePreview, import_share_url
 from .i18n import Translator
-from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tags, normalize_tag
-from .models import DOCUMENT_TYPE_REGULAR, DOCUMENT_TYPE_AI, DOCUMENT_TYPES, MAX_SUMMARY_LENGTH, MAX_LINK_TYPE_LENGTH
+from .models import (
+    DOCUMENT_TYPE_AI,
+    DOCUMENT_TYPE_REGULAR,
+    DOCUMENT_TYPES,
+    MAX_LINK_TYPE_LENGTH,
+    MAX_SUMMARY_LENGTH,
+)
 from .search import MAX_QUERY_LENGTH
+from .tags import MAX_TAG_LENGTH, MAX_TAGS_PER_DOCUMENT, normalize_tag, normalize_tags
 
 SEARCH_MODES = {"hybrid", "keyword", "semantic"}
+ASK_KEYS = {"question", "folder_id", "limit"}
 
 
 class _SharePreviewCache:
@@ -185,7 +203,15 @@ class Binder(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         share_match = re.fullmatch(r"/api/folders/([^/]+)/documents/share-(preview|confirm)", path)
-        if not is_folder_request and not is_document_request and not is_link_types_request and not link_match and not share_match:
+        is_ask_request = path == "/api/ask"
+        if (
+            not is_folder_request
+            and not is_document_request
+            and not is_link_types_request
+            and not link_match
+            and not share_match
+            and not is_ask_request
+        ):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
 
@@ -194,9 +220,18 @@ class Binder(BaseHTTPRequestHandler):
             if share_match and (length <= 0 or length > 1_000_000):
                 self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
                 return
+            if is_ask_request and (length <= 0 or length > 20_000):
+                self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+                return
             payload = json.loads(self.rfile.read(length))
         except (ValueError, json.JSONDecodeError):
-            self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            if is_ask_request:
+                self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            else:
+                self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
+            return
+        if is_ask_request:
+            self._ask(payload)
             return
         if not isinstance(payload, dict):
             self._send_json({"error": "בקשה לא תקינה"}, HTTPStatus.BAD_REQUEST)
@@ -228,6 +263,36 @@ class Binder(BaseHTTPRequestHandler):
             return
 
         self._send_json(self.store.create(name, description), HTTPStatus.CREATED)
+
+    def _ask(self, payload: object) -> None:
+        if not isinstance(payload, dict) or not set(payload) <= ASK_KEYS:
+            self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+            return
+        question = payload.get("question")
+        if not isinstance(question, str) or not 1 <= len(question.strip()) <= ASK_MAX_QUESTION_LENGTH:
+            self._send_json({"error": "invalid_question"}, HTTPStatus.BAD_REQUEST)
+            return
+        folder_id = payload.get("folder_id")
+        if "folder_id" in payload:
+            if not isinstance(folder_id, str) or not folder_id.strip() or len(folder_id.strip()) > 100:
+                self._send_json({"error": "invalid_request"}, HTTPStatus.BAD_REQUEST)
+                return
+            folder_id = folder_id.strip()
+        else:
+            folder_id = None
+        limit = payload.get("limit", ASK_DEFAULT_DOCUMENTS)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= ASK_MAX_DOCUMENTS:
+            self._send_json({"error": "invalid_limit"}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            result = self.store.ask(question.strip(), folder_id=folder_id, limit=limit)
+        except AskDisabled:
+            self._send_json({"error": "ask_disabled"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        except ChatUnavailable:
+            self._send_json({"error": "generation_unavailable"}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
+        self._send_json(result)
 
     def _preview_shared_thread(self, folder_id: str, payload: dict[str, object]) -> None:
         if set(payload) != {"url"} or not isinstance(payload["url"], str):
@@ -369,7 +434,7 @@ class Binder(BaseHTTPRequestHandler):
             except ValueError:
                 self._send_json({"error": "התאריך אינו תקין"}, HTTPStatus.BAD_REQUEST)
                 return
-        if "time" in updates and updates["time"]:
+        if updates.get("time"):
             try:
                 time.fromisoformat(str(updates["time"]))
             except ValueError:
@@ -611,7 +676,7 @@ class Binder(BaseHTTPRequestHandler):
                 b"".join(header_lines) + b"\r\n"
             )
             filename = headers.get_filename()
-            upload = TemporaryFile() if filename else None
+            upload = TemporaryFile() if filename else None  # noqa: SIM115 closed below, after the part is read
             previous = b""
             boundary_line = b""
             while remaining > 0:
@@ -664,19 +729,17 @@ class Binder(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     @staticmethod
-    def _upload_parts(path: str) -> Optional[tuple[str, str]]:
+    def _upload_parts(path: str) -> tuple[str, str] | None:
         parts = path.strip("/").split("/")
-        if len(parts) == 6 and parts[:2] == ["api", "folders"]:
-            if parts[3] == "documents" and parts[5] == "files":
-                return parts[2], parts[4]
+        if len(parts) == 6 and parts[:2] == ["api", "folders"] and parts[3] == "documents" and parts[5] == "files":
+            return parts[2], parts[4]
         return None
 
     @staticmethod
-    def _attachment_parts(path: str) -> Optional[tuple[str, str, str]]:
+    def _attachment_parts(path: str) -> tuple[str, str, str] | None:
         parts = path.strip("/").split("/")
-        if len(parts) == 7 and parts[:2] == ["api", "folders"]:
-            if parts[3] == "documents" and parts[5] == "files":
-                return parts[2], parts[4], parts[6]
+        if len(parts) == 7 and parts[:2] == ["api", "folders"] and parts[3] == "documents" and parts[5] == "files":
+            return parts[2], parts[4], parts[6]
         return None
 
     def _send_json(self, value: object, status: HTTPStatus = HTTPStatus.OK) -> None:

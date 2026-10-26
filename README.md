@@ -312,6 +312,67 @@ docker compose exec app binder-search status        # show index and embedding c
 Run `backfill` once after upgrading, so attachments uploaded before this
 feature become searchable.
 
+### Ask (questions about your documents)
+
+`POST /api/ask` answers a question from your documents. It retrieves the most
+relevant documents with the same hybrid search as `GET /api/search`, then asks a
+local Ollama chat model to answer using only their text. The answer cites
+documents as `[1]`, `[2]`, and so on, which match the `sources` list.
+
+The request body is JSON:
+
+| Field       | Meaning                                                              |
+|-------------|----------------------------------------------------------------------|
+| `question`  | Required. 1 to 1,000 characters after trimming.                      |
+| `folder_id` | Optional. Limit the documents used to one folder.                    |
+| `limit`     | Optional. 1 to 10 documents, default 5.                              |
+
+A successful answer looks like:
+
+```json
+{
+  "question": "What is the rent?",
+  "answer": "The rent is 5,000 ILS a month [1].",
+  "status": "ok",
+  "sources": [
+    {"index": 1, "id": "…", "folder_id": "…", "folder_name": "Case",
+     "name": "Lease", "date": "2026-01-01"}
+  ],
+  "semantic": "ok",
+  "model": "gemma3:4b"
+}
+```
+
+`status` is `ok`, or `no_matches` when no document matched. In that case
+`answer` is `null` and the model is not called. `semantic` has the same values
+as in search.
+
+Each document is sent as its whole text: its name, folder, date and tags, then
+its description, summary, body and attachment text. Each document is capped at
+about 4,000 characters, and the total context at about 12,000 characters, so
+long documents are cut short and documents past the limit are left out of both
+the context and `sources`.
+
+Errors:
+
+- `400` with `{"error": "invalid_request"}`, `{"error": "invalid_question"}`, or
+  `{"error": "invalid_limit"}`
+- `503` with `{"error": "ask_disabled"}` when `BINDER_ASK` is off
+- `503` with `{"error": "generation_unavailable"}` when Ollama cannot answer
+  (down, timed out, or returned nothing)
+
+Settings, in `.env`:
+
+- `BINDER_ASK`: empty to enable (default); `0`, `false` or `no` to disable
+- `BINDER_CHAT_MODEL`: default `gemma3:4b`, which handles Hebrew and English well
+- `BINDER_CHAT_TIMEOUT`: seconds to wait for an answer, default `300`
+
+`docker compose up` pulls `gemma3:4b` on the first start, about 3.3 GB, into the
+same `ollama-data` volume. The pull does not block the app, and a failed pull
+only disables ask. On macOS, Docker runs Ollama on the CPU, so answers can take
+a minute or more. Ask uses the same Ollama server as semantic search, but a slow
+or failed answer does not affect embeddings or search.
+
 ## Running the tests
 
 ```bash
