@@ -61,7 +61,7 @@ def _semantic_min_similarity() -> float:
 
 
 SEMANTIC_MIN_SIMILARITY = _semantic_min_similarity()
-OLLAMA_QUERY_TIMEOUT = 3
+OLLAMA_QUERY_TIMEOUT = int(os.environ.get("BINDER_OLLAMA_QUERY_TIMEOUT", "").strip() or "15")
 OLLAMA_DOCUMENT_TIMEOUT = 120
 EMBEDDING_MAX_CHARS = 8000
 
