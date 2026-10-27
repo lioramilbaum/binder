@@ -387,7 +387,7 @@ class FetchTests(unittest.TestCase):
 
         for response, expected in [
             (Response(content_type="application/json"), "unsupported_format"),
-            (Response(body=b"x" * 4_000_001), "too_large"),
+            (Response(body=b"x" * 16_000_001), "too_large"),
         ]:
             connection = Mock()
             connection.getresponse.return_value = response
@@ -410,7 +410,7 @@ class FetchTests(unittest.TestCase):
         for encoding, compress in (("gzip", gzip.compress), ("deflate", zlib.compress)):
             with self.subTest(encoding=encoding):
                 with self.assertRaises(ShareImportError) as error:
-                    self.fetch_encoded(encoding, compress(b"x" * 8_000_001))
+                    self.fetch_encoded(encoding, compress(b"x" * 32_000_001))
                 self.assertEqual(error.exception.code, "too_large")
 
     def test_compressed_stream_must_have_exactly_one_complete_member(self):
