@@ -282,6 +282,18 @@ class I18nTests(unittest.TestCase):
         self.assertIn('[aria-pressed="true"]', styles)
         self.assertIn('[dir="rtl"] .calendar-nav-icon', styles)
 
+    def test_document_delete_button_wiring(self):
+        for locale in ("he", "en"):
+            with self.subTest(locale=locale):
+                script = _get("/app.js", locale)
+                start = script.index("function renderDocuments(")
+                body = script[start:script.index("\n}\n", start)]
+                self.assertIn("danger-button", body)
+                self.assertIn("confirm(format(", body)
+                self.assertIn('method: "DELETE"', body)
+                self.assertIn("openFolder(currentFolderId, false)", body)
+                self.assertIn(Translator(locale).js("delete_document"), body)
+
 
 if __name__ == "__main__":
     unittest.main()

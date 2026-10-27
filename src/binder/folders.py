@@ -118,6 +118,12 @@ class Folders:
             self._changed()
         return document
 
+    def delete_document(self, folder_id: str, document_id: str) -> bool:
+        result = folder_repository.delete_document(self.factory, folder_id, document_id)
+        if result:
+            self._changed()
+        return result
+
     def update_document(
         self, folder_id: str, document_id: str, updates: dict[str, str]
     ) -> dict[str, object] | None:

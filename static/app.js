@@ -956,6 +956,31 @@ function renderDocuments(documents) {
       editActions.append(chatToggle);
     }
 
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "secondary-button small-button danger-button";
+    deleteBtn.textContent = @@delete_document@@;
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm(format(@@confirm_delete_document@@, { name: documentItem.name }))) return;
+      deleteBtn.disabled = true;
+      try {
+        const response = await fetch(
+          `/api/folders/${encodeURIComponent(currentFolderId)}/documents/${encodeURIComponent(documentItem.id)}`,
+          { method: "DELETE" }
+        );
+        if (!response.ok) {
+          deleteBtn.disabled = false;
+          alert(@@delete_document_failed@@);
+          return;
+        }
+        await openFolder(currentFolderId, false);
+      } catch {
+        deleteBtn.disabled = false;
+        alert(@@delete_document_failed@@);
+      }
+    });
+    editActions.append(deleteBtn);
+
     body.append(editActions);
 
     if (documentItem.description) {

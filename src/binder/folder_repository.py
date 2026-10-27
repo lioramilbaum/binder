@@ -559,6 +559,29 @@ def remove_file(
         return _document_to_dict(document)
 
 
+def delete_document(factory: sessionmaker[Session], folder_id: str, document_id: str) -> bool:
+    """Delete a document with its attachments, returning ``False`` if not found."""
+
+    with session_scope(factory) as session:
+        document = (
+            session.query(Document)
+            .options(selectinload(Document.folder), selectinload(Document.files))
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return False
+        # Delete links explicitly — SQLite does not enforce FK cascade without PRAGMA foreign_keys
+        session.query(DocumentLink).filter(
+            (DocumentLink.source_document_id == document_id)
+            | (DocumentLink.target_document_id == document_id)
+        ).delete(synchronize_session=False)
+        document.folder.updated_at = _now()
+        session.delete(document)
+        session.flush()
+        return True
+
+
 def get_file(
     factory: sessionmaker[Session], folder_id: str, document_id: str, file_id: str
 ) -> tuple[bytes, str, str] | None:

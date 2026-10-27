@@ -281,6 +281,48 @@ class FolderRepositoryTests(unittest.TestCase):
             folder_repository.remove_file(self.factory, "missing-folder", document["id"], "missing")
         )
 
+    def test_delete_document_removes_it_with_links_and_tags(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+        doc_a = folder_repository.create_document(
+            self.factory, folder["id"], "2026-10-01", "A", tags=["x"]
+        )
+        doc_b = folder_repository.create_document(self.factory, folder["id"], "2026-10-02", "B")
+        link_type, _ = folder_repository.create_link_type(self.factory, "Reply to")
+        folder_repository.add_document_link(
+            self.factory, folder["id"], doc_a["id"], doc_b["id"], link_type["id"]
+        )
+
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], doc_a["id"]))
+
+        documents = folder_repository.get_folder(self.factory, folder["id"])["documents"]
+        self.assertEqual([document["id"] for document in documents], [doc_b["id"]])
+        self.assertNotIn("links", documents[0])
+        with self.factory() as session:
+            link_rows = session.execute(
+                text(
+                    "SELECT count(*) FROM document_links "
+                    "WHERE source_document_id = :id OR target_document_id = :id"
+                ),
+                {"id": doc_a["id"]},
+            ).scalar_one()
+            tag_rows = session.execute(
+                text("SELECT count(*) FROM document_tags WHERE document_id = :id"),
+                {"id": doc_a["id"]},
+            ).scalar_one()
+        self.assertEqual(link_rows, 0)
+        self.assertEqual(tag_rows, 0)
+
+    def test_delete_document_missing_or_wrong_folder_returns_false(self):
+        folder = folder_repository.create_folder(self.factory, "מסמכים")
+        other = folder_repository.create_folder(self.factory, "אחרת")
+        document = folder_repository.create_document(self.factory, folder["id"], "2026-10-01", "A")
+
+        self.assertFalse(folder_repository.delete_document(self.factory, folder["id"], "missing"))
+        self.assertFalse(folder_repository.delete_document(self.factory, other["id"], document["id"]))
+
+        documents = folder_repository.get_folder(self.factory, folder["id"])["documents"]
+        self.assertEqual([item["id"] for item in documents], [document["id"]])
+
     def test_create_document_creates_missing_tags(self):
         folder = folder_repository.create_folder(self.factory, "מסמכים")
 
@@ -1033,6 +1075,63 @@ class AttachmentRepositoryTests(unittest.TestCase):
         updated = folder_repository.remove_file(self.factory, folder["id"], document["id"], photo_id)
 
         self.assertIn("whatsapp_chat", updated)
+
+    def test_deleting_document_releases_its_large_objects(self):
+        folder = folder_repository.create_folder(self.factory, "שיחות")
+        document = self._document(folder, "מסמך")
+        folder_repository.add_files(
+            self.factory,
+            folder["id"],
+            document["id"],
+            [("a.bin", "application/octet-stream", b"one"), ("b.bin", "application/octet-stream", b"two")],
+        )
+        self.assertEqual(self._large_object_count(), 2)
+
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], document["id"]))
+
+        self.assertEqual(self._large_object_count(), 0)
+
+    def test_deleting_document_keeps_large_object_shared_by_duplicate(self):
+        folder = folder_repository.create_folder(self.factory, "כפילויות")
+        first, second = self._document(folder, "א"), self._document(folder, "ב")
+        folder_repository.add_files(
+            self.factory, folder["id"], first["id"], [("a.bin", "application/octet-stream", b"x")]
+        )
+        two = folder_repository.add_files(
+            self.factory, folder["id"], second["id"], [("b.bin", "application/octet-stream", b"x")]
+        )
+
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], first["id"]))
+
+        self.assertEqual(self._large_object_count(), 1)
+        data, _type, _name = folder_repository.get_file(
+            self.factory, folder["id"], second["id"], two[0]["id"]
+        )
+        self.assertEqual(data, b"x")
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], second["id"]))
+        self.assertEqual(self._large_object_count(), 0)
+
+    def test_deleting_document_keeps_large_object_shared_with_extracted_document(self):
+        folder = folder_repository.create_folder(self.factory, "שיחות")
+        source = folder_repository.create_document(self.factory, folder["id"], "2026-08-30", "WhatsApp")
+        chat = "30/08/2026, 14:35 - דנה: אפשר לדבר?".encode()
+        folder_repository.add_files(
+            self.factory, folder["id"], source["id"], [("chat.txt", "text/plain", chat)]
+        )
+        extracted = folder_repository.extract_whatsapp_messages(
+            self.factory, folder["id"], source["id"], "קטע", "2026-08-30", "2026-08-30"
+        )
+        extracted_file_id = extracted["files"][0]["id"]
+
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], source["id"]))
+
+        self.assertEqual(self._large_object_count(), 1)
+        data, _type, _name = folder_repository.get_file(
+            self.factory, folder["id"], extracted["id"], extracted_file_id
+        )
+        self.assertEqual(data, chat)
+        self.assertTrue(folder_repository.delete_document(self.factory, folder["id"], extracted["id"]))
+        self.assertEqual(self._large_object_count(), 0)
 
 
 if __name__ == "__main__":

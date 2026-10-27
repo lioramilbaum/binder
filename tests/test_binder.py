@@ -221,11 +221,12 @@ class BinderAttachmentTests(unittest.TestCase):
 
 
 class BinderDeleteTests(unittest.TestCase):
-    def delete(self, path, remove_file_result=_DEFAULT_REMOVE_RESULT):
+    def delete(self, path, remove_file_result=_DEFAULT_REMOVE_RESULT, delete_document_result=True):
         handler = object.__new__(Binder)
         handler.path = path
         handler.store = Mock()
         handler.store.remove_file.return_value = remove_file_result
+        handler.store.delete_document.return_value = delete_document_result
         handler._send_json = Mock()
         handler.send_error = Mock()
         handler.do_DELETE()
@@ -247,6 +248,25 @@ class BinderDeleteTests(unittest.TestCase):
             remove_file_result=None,
         )
         self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+    def test_deletes_document(self):
+        handler = self.delete("/api/folders/folder/documents/document")
+        handler.store.delete_document.assert_called_once_with("folder", "document")
+        handler.store.remove_file.assert_not_called()
+        handler._send_json.assert_called_once_with({"id": "document"})
+
+    def test_missing_document_returns_404(self):
+        handler = self.delete(
+            "/api/folders/folder/documents/document",
+            delete_document_result=False,
+        )
+        handler.store.delete_document.assert_called_once_with("folder", "document")
+        self.assertEqual(handler._send_json.call_args.args[1], 404)
+
+    def test_document_collection_path_is_not_deletable(self):
+        handler = self.delete("/api/folders/folder/documents")
+        handler.store.delete_document.assert_not_called()
+        handler.send_error.assert_called_once()
 
 
 class BinderAiThreadTests(unittest.TestCase):
