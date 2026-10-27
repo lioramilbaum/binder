@@ -1212,22 +1212,17 @@ async function loadLinkTargets(excludeId) {
   linkTargetSelect.options[0].value = "";
   linkTargetSelect.options[0].textContent = @@choose_link_target@@;
 
-  for (const folder of folders) {
-    const optgroup = document.createElement("optgroup");
-    optgroup.label = folder.name;
-    if (folder.id === currentFolderId) {
-      linkTargetSelect.insertBefore(optgroup, linkTargetSelect.firstChild.nextSibling);
-    } else {
-      linkTargetSelect.append(optgroup);
-    }
-    for (const doc of folder.documents) {
-      if (doc.id === excludeId) continue;
-      const option = document.createElement("option");
-      option.value = doc.id;
-      const dateStr = new Date(doc.date + "T00:00:00").toLocaleDateString(@@date_locale@@);
-      option.textContent = `${doc.name} · ${dateStr}`;
-      optgroup.append(option);
-    }
+  const folder = folders.find((f) => f.id === currentFolderId);
+  if (!folder) return;
+  const docs = [...folder.documents]
+    .filter((doc) => doc.id !== excludeId)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  for (const doc of docs) {
+    const option = document.createElement("option");
+    option.value = doc.id;
+    const dateStr = new Date(doc.date + "T00:00:00").toLocaleDateString(@@date_locale@@);
+    option.textContent = `${doc.name} · ${dateStr}`;
+    linkTargetSelect.append(option);
   }
 }
 

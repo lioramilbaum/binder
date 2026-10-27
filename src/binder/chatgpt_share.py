@@ -22,9 +22,9 @@ from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 from uuid import UUID
 
-MAX_DOWNLOAD = 4_000_000
-MAX_DECODED = 8_000_000
-MAX_TRANSCRIPT = 200_000
+MAX_DOWNLOAD = 16_000_000
+MAX_DECODED = 32_000_000
+MAX_TRANSCRIPT = 1_000_000
 MAX_REDIRECTS = 3
 MAX_ADDRESSES = 8
 TIMEOUT = 5
@@ -323,7 +323,7 @@ def _flight_pool(page: str) -> list:
 
 
 def _decode_pool(pool: list) -> dict:
-    if len(pool) < 3 or len(pool) > 100_000:
+    if len(pool) < 3 or len(pool) > 500_000:
         raise ShareImportError("unsupported_format")
     cache: dict[int, object] = {}
     active: set[int] = set()
