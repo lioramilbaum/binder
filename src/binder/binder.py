@@ -467,6 +467,20 @@ class Binder(BaseHTTPRequestHandler):
             self._send_json(document, HTTPStatus.OK)
             return
 
+        # Check if this is a document deletion (5 parts: api/folders/{folder_id}/documents/{document_id})
+        if (
+            len(parts) == 5
+            and parts[0] == "api"
+            and parts[1] == "folders"
+            and parts[3] == "documents"
+        ):
+            success = self.store.delete_document(parts[2], parts[4])
+            if not success:
+                self._send_json({"error": "document_not_found"}, HTTPStatus.NOT_FOUND)
+            else:
+                self._send_json({"id": parts[4]})
+            return
+
         # Otherwise, handle as file deletion
         attachment_parts = self._attachment_parts(path)
         if attachment_parts is None:
