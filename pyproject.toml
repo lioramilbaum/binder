@@ -5,10 +5,10 @@ description = "A small MVP for managing information folders."
 requires-python = ">=3.11"
 dependencies = [
   "alembic==1.20.1",
-  "psycopg[binary]==3.3.6",
+  "psycopg[binary]==3.3.8",
   "pypdf>=6.21.1",
   "python-dotenv==1.2.4",
-  "sqlalchemy==2.1.6",
+  "sqlalchemy==2.1.8",
 ]
 
 [project.scripts]
@@ -30,5 +30,5 @@ prepend_sys_path = ["."]
 
 [dependency-groups]
 dev = [
-    "pytest==9.1.1",
+    "pytest==9.2.0",
 ]
