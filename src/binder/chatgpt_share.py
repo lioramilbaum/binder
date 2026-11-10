@@ -1,7 +1,8 @@
 """Import the text snapshot embedded in a public ChatGPT share page.
 
-The page format is undocumented. Parse only the known streamed payload and fail
-closed when its conversation shape is no longer recognizable.
+The page format is undocumented. Parse only the known payloads (the plain-JSON
+``__WEB_MOBILE_DATA__`` page data, or the older streamed Flight payload) and fail
+closed when the conversation shape is no longer recognizable.
 """
 
 from __future__ import annotations
@@ -31,6 +32,13 @@ TIMEOUT = 5
 TOTAL_TIMEOUT = 12
 _DNS_SLOTS = threading.BoundedSemaphore(4)
 _ENQUEUE = re.compile(r"streamController\.enqueue\(\s*")
+_MARKDOWN_CODE = re.compile(r"(```.*?```|`[^`\n]*`)", re.S)
+_MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
+# ChatGPT serves bot user agents a link-preview stub without the conversation.
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
 _INTERNAL_CONTENT_TYPES = frozenset({
     "thoughts", "reasoning_recap", "model_editable_context",
     "tool_response", "execution_output", "model_set_context",
@@ -65,6 +73,16 @@ def _source_message_time(value: object) -> str | None:
             return None
         return datetime.fromtimestamp(seconds, timezone.utc).isoformat(timespec="microseconds")
     except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _source_millis_time(value: object) -> str | None:
+    """Canonical UTC time from a numeric Unix timestamp in milliseconds."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return _source_message_time(value / 1000)
+    except OverflowError:
         return None
 
 
@@ -211,7 +229,7 @@ def fetch_share_page(url: str) -> tuple[str, bytes]:
                     headers={
                         "Accept": "text/html",
                         "Accept-Encoding": "gzip, deflate",
-                        "User-Agent": "Binder/1.0",
+                        "User-Agent": USER_AGENT,
                     },
                 )
                 connection.set_phase_timeout()
@@ -285,12 +303,14 @@ def fetch_share_page(url: str) -> tuple[str, bytes]:
 class _Scripts(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=False)
-        self.scripts: list[str] = []
+        self.scripts: list[tuple[str | None, str]] = []
         self._parts: list[str] | None = None
+        self._id: str | None = None
 
     def handle_starttag(self, tag, attrs):
         if tag == "script":
             self._parts = []
+            self._id = dict(attrs).get("id")
 
     def handle_data(self, data):
         if self._parts is not None:
@@ -298,16 +318,76 @@ class _Scripts(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "script" and self._parts is not None:
-            self.scripts.append("".join(self._parts))
+            self.scripts.append((self._id, "".join(self._parts)))
             self._parts = None
 
 
-def _flight_pool(page: str) -> list:
+def _scripts(page: str) -> list[tuple[str | None, str]]:
     parser = _Scripts()
     parser.feed(page)
+    return parser.scripts
+
+
+def _web_mobile_conversation(scripts: list[tuple[str | None, str]]) -> dict | None:
+    """The conversation object from the plain-JSON page data, if the page has it."""
+    bodies = [body for script_id, body in scripts if script_id == "__WEB_MOBILE_DATA__"]
+    if not bodies:
+        return None
+    if len(bodies) != 1:
+        raise ShareImportError("unsupported_format")
+    data = json.loads(bodies[0])
+    if not isinstance(data, dict):
+        raise ShareImportError("unsupported_format")
+    conversation = data.get("conversation")
+    return conversation if isinstance(conversation, dict) and "messages" in conversation else None
+
+
+def _unescape_markdown(text: str) -> str:
+    """Drop markdown backslash escapes (``1\\.``) outside code; Binder shows plain text."""
+    segments = _MARKDOWN_CODE.split(text)
+    return "".join(
+        segment if index % 2 else _MARKDOWN_ESCAPE.sub(r"\1", segment)
+        for index, segment in enumerate(segments)
+    )
+
+
+def _web_mobile_preview(source_url: str, conversation: dict) -> SharePreview:
+    messages = conversation["messages"]
+    if not isinstance(messages, list) or not messages:
+        raise ShareImportError("unsupported_format")
+    if len(messages) > 5000:
+        raise ShareImportError("too_large")
+    turns = []
+    omitted = False
+    non_visible_omitted = False
+    for message in messages:
+        if not isinstance(message, dict):
+            raise ShareImportError("unsupported_format")
+        role = message.get("role")
+        if role not in ("user", "assistant"):
+            non_visible_omitted = True
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise ShareImportError("unsupported_format")
+        if any(message.get(key) for key in ("attachments", "fileAttachments", "images")):
+            omitted = True
+        text = _unescape_markdown(content).strip()
+        if text:
+            turns.append(_turn(role, text))
+        else:
+            omitted = True
+    shared = conversation.get("sharedContent")
+    shared = shared if isinstance(shared, dict) else {}
+    title = conversation.get("title") or shared.get("title")
+    return _preview(source_url, title, turns, omitted, non_visible_omitted,
+                    _source_millis_time(shared.get("originalCreatedAt")))
+
+
+def _flight_pool(scripts: list[tuple[str | None, str]]) -> list:
     pools = []
     decoder = json.JSONDecoder()
-    for script in parser.scripts:
+    for _, script in scripts:
         for match in _ENQUEUE.finditer(script):
             try:
                 chunk, _ = decoder.raw_decode(script, match.end())
@@ -399,8 +479,11 @@ def _conversation(root: object) -> dict:
 
 def parse_share_page(source_url: str, page: bytes) -> SharePreview:
     try:
-        html = page.decode("utf-8", "strict")
-        data = _conversation(_decode_pool(_flight_pool(html)))
+        scripts = _scripts(page.decode("utf-8", "strict"))
+        conversation = _web_mobile_conversation(scripts)
+        if conversation is not None:
+            return _web_mobile_preview(source_url, conversation)
+        data = _conversation(_decode_pool(_flight_pool(scripts)))
         linear = data.get("linear_conversation", [])
         mapping = data.get("mapping", {})
         if not linear or not isinstance(mapping, dict):
@@ -411,7 +494,6 @@ def parse_share_page(source_url: str, page: bytes) -> SharePreview:
         omitted = False
         non_visible_omitted = False
         source_first_message_at = None
-        timestamp_unavailable = False
         for entry in linear:
             if not isinstance(entry, dict):
                 raise ShareImportError("unsupported_format")
@@ -486,27 +568,37 @@ def parse_share_page(source_url: str, page: bytes) -> SharePreview:
             if text:
                 if not turns:
                     source_first_message_at = _source_message_time(message.get("create_time"))
-                    timestamp_unavailable = source_first_message_at is None
-                turns.append(f"{'Liora' if role == 'user' else 'AI'}:\n{text}")
-        if not turns:
-            raise ShareImportError("unsupported_format")
-        transcript = "\n\n".join(turns)
-        if len(transcript) > MAX_TRANSCRIPT:
-            raise ShareImportError("too_large")
+                turns.append(_turn(role, text))
         title = data.get("pageTitle") or data.get("ogTitle") or data.get("title")
-        title = title.strip() if isinstance(title, str) and title.strip() else "ChatGPT conversation"
-        if len(title) > 200:
-            title = title[:200]
-        warnings = tuple(
-            code for condition, code in (
-                (non_visible_omitted, "non_visible_omitted"),
-                (omitted, "non_text_omitted"),
-                (timestamp_unavailable, "timestamp_unavailable"),
-            ) if condition
-        )
-        return SharePreview(source_url, title, transcript, len(turns), warnings, source_first_message_at)
+        return _preview(source_url, title, turns, omitted, non_visible_omitted, source_first_message_at)
     except (UnicodeDecodeError, RecursionError, KeyError, TypeError, ValueError):
         raise ShareImportError("unsupported_format") from None
+
+
+def _turn(role: str, text: str) -> str:
+    return f"{'Liora' if role == 'user' else 'AI'}:\n{text}"
+
+
+def _preview(
+    source_url: str, title: object, turns: list[str], omitted: bool,
+    non_visible_omitted: bool, source_first_message_at: str | None,
+) -> SharePreview:
+    if not turns:
+        raise ShareImportError("unsupported_format")
+    transcript = "\n\n".join(turns)
+    if len(transcript) > MAX_TRANSCRIPT:
+        raise ShareImportError("too_large")
+    title = title.strip() if isinstance(title, str) and title.strip() else "ChatGPT conversation"
+    if len(title) > 200:
+        title = title[:200]
+    warnings = tuple(
+        code for condition, code in (
+            (non_visible_omitted, "non_visible_omitted"),
+            (omitted, "non_text_omitted"),
+            (source_first_message_at is None, "timestamp_unavailable"),
+        ) if condition
+    )
+    return SharePreview(source_url, title, transcript, len(turns), warnings, source_first_message_at)
 
 
 def import_share_url(url: str) -> SharePreview:
