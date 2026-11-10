@@ -43,6 +43,20 @@ def message_with(role, content, **fields):
     return node
 
 
+def web_data_page(messages, *, title="Synthetic conversation", created_at=1700000000250, extra=""):
+    """Synthetic current-format page: plain JSON conversation in __WEB_MOBILE_DATA__."""
+    shared = {"title": title}
+    if created_at is not None:
+        shared["originalCreatedAt"] = created_at
+    data = {"kind": "conversation", "conversation": {"title": title, "sharedContent": shared, "messages": messages}}
+    body = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return f'<html><script id="__WEB_MOBILE_DATA__" type="application/json">{body}</script>{extra}</html>'.encode()
+
+
+def web_message(role, content, **fields):
+    return {"id": "synthetic", "role": role, "content": content, **fields}
+
+
 class ParserTests(unittest.TestCase):
     def test_timestamp_conversion_accepts_epoch_and_rejects_invalid_values(self):
         self.assertEqual(_source_message_time(0), "1970-01-01T00:00:00.000000+00:00")
@@ -206,7 +220,96 @@ class ParserTests(unittest.TestCase):
                 parse_share_page(LINK, html)
 
 
+class WebDataParserTests(unittest.TestCase):
+    def test_messages_title_and_millisecond_source_time(self):
+        parsed = parse_share_page(LINK, web_data_page([
+            web_message("user", "שאלה"),
+            web_message("assistant", "## Heading\n\n**1\\. Point**\\: done", renderedHtml=""),
+            web_message("user", "Thanks"),
+        ], title="Synthetic title"))
+        self.assertEqual(parsed.title, "Synthetic title")
+        self.assertEqual(parsed.transcript, "Liora:\nשאלה\n\nAI:\n## Heading\n\n**1. Point**: done\n\nLiora:\nThanks")
+        self.assertEqual(parsed.message_count, 3)
+        self.assertEqual(parsed.source_first_message_at, "2023-11-14T22:13:20.250000+00:00")
+        self.assertEqual(parsed.warnings, ())
+
+    def test_escapes_kept_inside_code(self):
+        parsed = parse_share_page(LINK, web_data_page([
+            web_message("assistant", "Use `a\\.b` and\n```\nre = r'\\d\\.'\n```\nthen 2\\."),
+        ]))
+        self.assertEqual(parsed.transcript, "AI:\nUse `a\\.b` and\n```\nre = r'\\d\\.'\n```\nthen 2.")
+
+    def test_other_roles_empty_content_and_attachments_are_flagged(self):
+        parsed = parse_share_page(LINK, web_data_page([
+            web_message("system", "System"),
+            web_message("user", "See this", attachments=[{"name": "synthetic.png"}]),
+            web_message("assistant", "   "),
+            web_message("assistant", "Reply"),
+        ]))
+        self.assertEqual(parsed.transcript, "Liora:\nSee this\n\nAI:\nReply")
+        self.assertEqual(parsed.warnings, ("non_visible_omitted", "non_text_omitted"))
+
+    def test_missing_or_invalid_source_time_warns(self):
+        for value in (None, True, "1700000000000", float("nan"), float("inf"), 10**1000):
+            with self.subTest(value=value):
+                parsed = parse_share_page(LINK, web_data_page([web_message("user", "Hi")], created_at=value))
+                self.assertIsNone(parsed.source_first_message_at)
+                self.assertEqual(parsed.warnings, ("timestamp_unavailable",))
+
+    def test_title_falls_back_to_shared_content_then_default(self):
+        page_bytes = web_data_page([web_message("user", "Hi")], title="Shared title")
+        page_bytes = page_bytes.replace(b'"conversation": {"title": "Shared title"', b'"conversation": {"title": ""')
+        self.assertEqual(parse_share_page(LINK, page_bytes).title, "Shared title")
+        self.assertEqual(parse_share_page(LINK, web_data_page([web_message("user", "Hi")], title=" ")).title,
+                         "ChatGPT conversation")
+
+    def test_falls_back_to_legacy_payload_without_web_conversation(self):
+        legacy = page([message("user", {"content_type": "text", "parts": ["Legacy"]})]).decode()
+        html = ('<html><script id="__WEB_MOBILE_DATA__" type="application/json">{"kind": "home"}</script>'
+                + legacy + "</html>").encode()
+        self.assertEqual(parse_share_page(LINK, html).transcript, "Liora:\nLegacy")
+
+    def test_bot_preview_stub_and_malformed_web_data_fail(self):
+        stub = (b'<html><head><title>Check out this chat</title></head>'
+                b'<body><a href="https://chatgpt.com/share/x">Check out this chat</a></body></html>')
+        duplicate = web_data_page([web_message("user", "a")], extra=web_data_page([web_message("user", "b")]).decode())
+        cases = [
+            stub,
+            web_data_page([]),
+            web_data_page([web_message("user", None)]),
+            web_data_page(["not a message"]),
+            web_data_page([web_message("system", "only hidden")]),
+            duplicate,
+            b'<script id="__WEB_MOBILE_DATA__" type="application/json">{broken</script>',
+            b'<script id="__WEB_MOBILE_DATA__" type="application/json">[]</script>',
+        ]
+        for html in cases:
+            with self.subTest(html=html[:60]), self.assertRaises(ShareImportError) as error:
+                parse_share_page(LINK, html)
+            self.assertEqual(error.exception.code, "unsupported_format")
+
+    def test_too_many_messages(self):
+        with self.assertRaises(ShareImportError) as error:
+            parse_share_page(LINK, web_data_page([web_message("user", "x")] * 5001))
+        self.assertEqual(error.exception.code, "too_large")
+
+
 class FetchTests(unittest.TestCase):
+    def test_request_identifies_as_browser(self):
+        # ChatGPT answers non-browser user agents with a link-preview stub.
+        response = Mock(status=200)
+        response.getheader.side_effect = lambda name, default=None: {"Content-Type": "text/html"}.get(name, default)
+        response.read.side_effect = [b"<html></html>", b""]
+        connection = Mock()
+        connection.getresponse.return_value = response
+        with patch("binder.chatgpt_share._public_addresses", return_value=["8.8.8.8"]), patch(
+            "binder.chatgpt_share._PinnedHTTPSConnection", return_value=connection
+        ):
+            fetch_share_page(LINK)
+        user_agent = connection.request.call_args.kwargs["headers"]["User-Agent"]
+        self.assertTrue(user_agent.startswith("Mozilla/5.0"))
+        self.assertNotIn("Binder", user_agent)
+
     def test_strict_share_link(self):
         self.assertEqual(validate_share_url(LINK + "/"), LINK)
         for url in [
