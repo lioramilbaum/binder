@@ -1,4 +1,4 @@
-FROM postgres:18.6
+FROM postgres:18.7
 RUN apt-get update \
     && apt-get install -y --no-install-recommends postgresql-18-pgvector \
     && rm -rf /var/lib/apt/lists/*
