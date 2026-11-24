@@ -607,6 +607,43 @@ class BinderTagsTests(unittest.TestCase):
         )
 
 
+class BinderGetDocumentTests(unittest.TestCase):
+    def get(self, path, document):
+        handler = object.__new__(Binder)
+        handler.path = path
+        handler.store = Mock()
+        handler.store.get_document.return_value = document
+        handler._send_json = Mock()
+        handler.do_GET()
+        return handler
+
+    def test_sends_document_from_the_store(self):
+        handler = self.get("/api/folders/f1/documents/d1", {"id": "d1"})
+
+        handler.store.get_document.assert_called_once_with("f1", "d1")
+        handler._send_json.assert_called_once_with({"id": "d1"})
+
+    def test_missing_document_returns_404(self):
+        handler = self.get("/api/folders/f1/documents/d1", None)
+
+        handler._send_json.assert_called_once_with(
+            {"error": "document_not_found"}, HTTPStatus.NOT_FOUND
+        )
+
+    def test_folder_path_still_loads_the_folder(self):
+        handler = object.__new__(Binder)
+        handler.path = "/api/folders/f1"
+        handler.store = Mock()
+        handler.store.get.return_value = {"id": "f1"}
+        handler._send_json = Mock()
+
+        handler.do_GET()
+
+        handler.store.get.assert_called_once_with("f1")
+        handler.store.get_document.assert_not_called()
+        handler._send_json.assert_called_once_with({"id": "f1"})
+
+
 class BinderSearchTests(unittest.TestCase):
     def search(self, path):
         handler = object.__new__(Binder)

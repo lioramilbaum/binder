@@ -185,6 +185,11 @@ class SearchRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.found("lease parking"), [doc["id"]])
         self.assertEqual(self.found("lease plumbing"), [])
+        result = folder_repository.search_documents(self.factory, "lease parking")
+        self.assertEqual(
+            {key: result["results"][0][key] for key in ("name", "date", "type")},
+            {"name": "Lease", "date": "2026-10-01", "type": "regular"},
+        )
 
     def test_search_is_scoped_to_the_folder(self):
         other = folder_repository.create_folder(self.factory, "Other")

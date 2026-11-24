@@ -134,6 +134,14 @@ class Binder(BaseHTTPRequestHandler):
         if path == "/api/folders":
             self._send_json(self.store.list())
             return
+        document_match = re.fullmatch(r"/api/folders/([^/]+)/documents/([^/]+)", path)
+        if document_match:
+            document = self.store.get_document(document_match.group(1), document_match.group(2))
+            if document is None:
+                self._send_json({"error": "document_not_found"}, HTTPStatus.NOT_FOUND)
+                return
+            self._send_json(document)
+            return
         if path.startswith("/api/folders/"):
             folder_id = path.removeprefix("/api/folders/")
             folder = self.store.get(folder_id)

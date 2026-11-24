@@ -254,7 +254,8 @@ response looks like:
 {
   "query": "lease",
   "results": [
-    {"id": "…", "folder_id": "…", "folder_name": "Case", "rank": 0.07,
+    {"id": "…", "folder_id": "…", "folder_name": "Case", "name": "Lease renewal",
+     "date": "2026-03-01", "type": "regular", "rank": 0.07,
      "matched_by": ["keyword", "semantic"], "score": 0.033}
   ],
   "semantic": "ok",
@@ -373,11 +374,93 @@ only disables ask. On macOS, Docker runs Ollama on the CPU, so answers can take
 a minute or more. Ask uses the same Ollama server as semantic search, but a slow
 or failed answer does not affect embeddings or search.
 
+## Using Binder from Claude (MCP)
+
+`binder-mcp` is a local [MCP](https://modelcontextprotocol.io) server that gives
+Claude Code and Claude Desktop these tools:
+
+- `search_documents`: search by keyword and by meaning, optionally in one folder
+- `get_document`: read one document, including its attachment text, in pages
+- `list_folders`: list the folders with their document counts
+- `list_documents`: list the documents in one folder with short summaries
+- `list_tags`: list the tags with their document counts
+- `save_document`: save text, such as a summary, as a new document
+
+There are no tools to delete, upload or edit documents.
+
+Attachment text, such as a WhatsApp export, is the plain text extracted at upload:
+line breaks become spaces, it is capped at 200,000 characters per attachment, and
+files over 50 MB have no text. `get_document` pages through that extracted text,
+so its character counts describe the extracted text, not the original file.
+
+The server talks to the running app, so start Binder with `make up` first. It
+reads the app's address from `BINDER_URL`, which defaults to
+`http://127.0.0.1:8000`; change it if you changed `APP_PORT`. The MCP
+dependencies are optional, and `uv run --extra mcp` installs them on first run.
+
+After pulling this change, rebuild the app with `make up`. The MCP server needs
+the single-document route and the name, date and type fields in search results,
+which older builds of the app do not have.
+
+### Claude Code
+
+```bash
+claude mcp add binder --scope user --transport stdio --env BINDER_URL=http://127.0.0.1:8000 \
+  -- uv run --directory /absolute/path/to/binder --extra mcp binder-mcp
+claude mcp list    # binder should show as connected
+```
+
+Then run `/mcp` in a Claude Code session to list the tools. The server name goes
+first, before `--env`: `--env` accepts several values, so a name placed after it
+would be read as another `KEY=value` pair. The server is added at user scope, so
+it works in every project.
+
+### Claude Desktop
+
+Open Settings > Developer > Edit Config. This opens
+`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS
+(`%APPDATA%\Claude\` on Windows, `~/.config/Claude/` on Linux). Add the
+`binder` entry:
+
+```json
+{"mcpServers": {"binder": {
+  "command": "/absolute/path/to/uv",
+  "args": ["run", "--directory", "/absolute/path/to/binder", "--extra", "mcp", "binder-mcp"],
+  "env": {"BINDER_URL": "http://127.0.0.1:8000"}}}}
+```
+
+Use the output of `which uv` for `command`: apps started from the desktop do not
+inherit your shell's `PATH`. Quit Claude Desktop completely and open it again.
+On macOS, logs are written to `~/Library/Logs/Claude/mcp-server-binder.log`.
+`claude mcp add-from-claude-desktop` can import this entry into Claude Code, but
+its help says it works on macOS and WSL only.
+
+### Privacy
+
+Search, embeddings and Ask run locally on Ollama, and nothing leaves your
+machine through the web interface. With MCP, whatever a tool returns is sent to
+Anthropic as part of your Claude conversation, and is handled under your Claude
+account's data settings. That includes titles, folder names, tags, summaries,
+full document text, and attachment text such as PDFs and WhatsApp exports.
+Anything you ask Claude to save is sent there too. Connect the server only if
+you are comfortable with that. Review each tool call before you approve it, and
+do not choose "always allow" for `get_document` if some folders are sensitive.
+
+### Safety
+
+Document text can contain instructions, which a model might follow instead of
+ignoring (prompt injection). The server tells Claude to treat document text as
+data, but that is not a guarantee. `save_document` is the only write: it creates
+a new document and cannot change or delete existing ones.
+
 ## Running the tests
 
 ```bash
 uv run pytest
 ```
+
+The MCP tests (`tests/test_mcp_server.py`) run in the same command; the dev
+dependency group installs `mcp` for them.
 
 Folder/document tests run against an in-memory SQLite database. Attachments
 are stored as PostgreSQL large objects (see below), so attachment tests need

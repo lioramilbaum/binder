@@ -11,11 +11,15 @@ dependencies = [
   "sqlalchemy==2.1.9",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp==2.3.0"]
+
 [project.scripts]
 binder-server = "binder.app:run"
 binder-import-json = "binder.json_import:main"
 binder-dedupe = "binder.dedupe:main"
 binder-search = "binder.search:main"
+binder-mcp = "binder.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,5 +34,6 @@ prepend_sys_path = ["."]
 
 [dependency-groups]
 dev = [
+    "mcp==2.3.0",
     "pytest==9.2.0",
 ]

@@ -71,6 +71,9 @@ class Folders:
     def get(self, folder_id: str) -> dict[str, object] | None:
         return folder_repository.get_folder(self.factory, folder_id)
 
+    def get_document(self, folder_id: str, document_id: str) -> dict[str, object] | None:
+        return folder_repository.get_document(self.factory, folder_id, document_id)
+
     def create(self, name: str, description: str = "") -> dict[str, object]:
         return folder_repository.create_folder(self.factory, name, description)
 
