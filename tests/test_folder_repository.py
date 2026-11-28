@@ -15,6 +15,7 @@ from binder.database import Base
 from binder.folder_repository import _file_to_dict, effective_content_type
 from binder.large_objects import RELEASE_FUNCTION_SQL, RELEASE_TRIGGER_SQL
 from binder.models import DOCUMENT_TYPE_REGULAR, DocumentFile
+from binder.text_extraction import extract_text
 
 
 class FolderRepositoryTests(unittest.TestCase):
@@ -51,6 +52,63 @@ class FolderRepositoryTests(unittest.TestCase):
 
     def test_get_missing_folder(self):
         self.assertIsNone(folder_repository.get_folder(self.factory, "missing"))
+
+    def test_get_document_returns_content_and_tags(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        created = folder_repository.create_document(
+            self.factory, folder["id"], "2026-03-01", "Lease",
+            content="Rent is due monthly", tags=["housing"],
+        )
+
+        document = folder_repository.get_document(self.factory, folder["id"], created["id"])
+
+        self.assertEqual(document["id"], created["id"])
+        self.assertEqual(document["content"], "Rent is due monthly")
+        self.assertEqual(document["tags"], ["housing"])
+        self.assertEqual(document["attachments_text"], [])
+
+    def test_get_document_attachment_text_is_ordered_and_skips_empty(self):
+        folder = folder_repository.create_folder(self.factory, "Chats")
+        document = folder_repository.create_document(self.factory, folder["id"], "2026-03-01", "Chat")
+        # A WhatsApp export is stored as an ordinary attachment, so its extracted text
+        # is what reaches get_document. Rows are inserted directly to keep this on SQLite.
+        raw = b"[1/3/26, 10:00] Liora: hello\n[1/3/26, 10:01] Dana: hi"
+        chat_text = extract_text("WhatsApp Chat.txt", "text/plain", raw, len(raw))
+        with self.factory() as session:
+            session.add_all([
+                DocumentFile(
+                    id="later", document_id=document["id"], name="notes.txt", content_type="text/plain",
+                    size=5, data_oid=0, text_content="second", created_at="2026-03-01T10:01:00Z",
+                ),
+                DocumentFile(
+                    id="chat", document_id=document["id"], name="WhatsApp Chat.txt",
+                    content_type="text/plain", size=len(raw), data_oid=0,
+                    text_content=chat_text, created_at="2026-03-01T10:00:00Z",
+                ),
+                DocumentFile(
+                    id="blank", document_id=document["id"], name="empty.txt", content_type="text/plain",
+                    size=0, data_oid=0, text_content="", created_at="2026-03-01T09:00:00Z",
+                ),
+            ])
+            session.commit()
+
+        loaded = folder_repository.get_document(self.factory, folder["id"], document["id"])
+
+        self.assertEqual(
+            [(item["file_id"], item["name"], item["text"]) for item in loaded["attachments_text"]],
+            [
+                ("chat", "WhatsApp Chat.txt", "[1/3/26, 10:00] Liora: hello [1/3/26, 10:01] Dana: hi"),
+                ("later", "notes.txt", "second"),
+            ],
+        )
+
+    def test_get_document_is_none_when_missing_or_in_another_folder(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        other = folder_repository.create_folder(self.factory, "Other")
+        created = folder_repository.create_document(self.factory, folder["id"], "2026-03-01", "Lease")
+
+        self.assertIsNone(folder_repository.get_document(self.factory, folder["id"], "missing"))
+        self.assertIsNone(folder_repository.get_document(self.factory, other["id"], created["id"]))
 
     def test_ai_threads_persist_in_folder_and_order_by_conversation_date(self):
         folder = folder_repository.create_folder(self.factory, "Case")
@@ -835,6 +893,41 @@ class AttachmentRepositoryTests(unittest.TestCase):
         self.assertEqual(data, b"image bytes")
         self.assertEqual(content_type, "image/jpeg")
         self.assertEqual(name, "צילום.jpg")
+
+    def test_get_document_includes_attachment_text(self):
+        folder = folder_repository.create_folder(self.factory, "Case")
+        document = self._document(folder, "Minutes")
+        files = folder_repository.add_files(
+            self.factory,
+            folder["id"],
+            document["id"],
+            [("notes.txt", "text/plain", b"Parking allocation minutes")],
+        )
+
+        loaded = folder_repository.get_document(self.factory, folder["id"], document["id"])
+
+        self.assertEqual(
+            loaded["attachments_text"],
+            [{"file_id": files[0]["id"], "name": "notes.txt", "text": "Parking allocation minutes"}],
+        )
+
+    def test_whatsapp_export_upload_text_reaches_get_document(self):
+        folder = folder_repository.create_folder(self.factory, "Chats")
+        document = self._document(folder, "Chat")
+        raw = b"[1/3/26, 10:00] Liora Milbaum: Shall we meet?\n[1/3/26, 10:05] Dana: Yes"
+        folder_repository.add_files(
+            self.factory,
+            folder["id"],
+            document["id"],
+            [("WhatsApp Chat.txt", "text/plain", raw)],
+        )
+
+        loaded = folder_repository.get_document(self.factory, folder["id"], document["id"])
+
+        self.assertEqual(
+            [item["text"] for item in loaded["attachments_text"]],
+            [extract_text("WhatsApp Chat.txt", "text/plain", raw, len(raw))],
+        )
 
     def _document(self, folder, name):
         return folder_repository.create_document(self.factory, folder["id"], "2026-08-30", name)

@@ -171,6 +171,67 @@ def _document_sort_key(document: Document) -> tuple[str, str, str]:
     return (document.date or "", document.time or "", document.created_at or "")
 
 
+def _document_query(session: Session):
+    """Documents query with the relations ``_document_to_dict`` reads eagerly loaded."""
+    return (
+        session.query(Document)
+        .options(selectinload(Document.folder))
+        .options(
+            selectinload(Document.outgoing_links)
+            .selectinload(DocumentLink.target)
+            .selectinload(Document.folder)
+        )
+        .options(
+            selectinload(Document.outgoing_links)
+            .selectinload(DocumentLink.link_type)
+        )
+        .options(
+            selectinload(Document.incoming_links)
+            .selectinload(DocumentLink.source)
+            .selectinload(Document.folder)
+        )
+        .options(
+            selectinload(Document.incoming_links)
+            .selectinload(DocumentLink.link_type)
+        )
+        .options(selectinload(Document.files))
+        .options(selectinload(Document.tags))
+    )
+
+
+def get_document(
+    factory: sessionmaker[Session], folder_id: str, document_id: str
+) -> dict[str, object] | None:
+    """Return one document in a folder with its attachment text, or ``None`` if not found there."""
+
+    with factory() as session:
+        document = (
+            _document_query(session)
+            .filter(Document.id == document_id, Document.folder_id == folder_id)
+            .one_or_none()
+        )
+        if document is None:
+            return None
+        # One query for all attachment text: text_content is deferred, so loading
+        # the DocumentFile rows and reading the column would cost one query per file.
+        attachments = (
+            session.query(DocumentFile.id, DocumentFile.name, DocumentFile.text_content)
+            .filter(
+                DocumentFile.document_id == document.id,
+                DocumentFile.text_content.is_not(None),
+                DocumentFile.text_content != "",
+            )
+            .order_by(DocumentFile.created_at, DocumentFile.id)
+            .all()
+        )
+        result = _document_to_dict(document)
+        result["attachments_text"] = [
+            {"file_id": file_id, "name": name, "text": text}
+            for file_id, name, text in attachments
+        ]
+        return result
+
+
 def list_folders(factory: sessionmaker[Session]) -> list[dict[str, object]]:
     """Return all folders, newest-updated first, with lightweight document summaries."""
 
@@ -321,32 +382,7 @@ def create_document(
         folder.updated_at = now
         session.flush()
         # Reload document with eager-loaded relationships to avoid N+1 queries
-        document = (
-            session.query(Document)
-            .options(selectinload(Document.folder))
-            .options(
-                selectinload(Document.outgoing_links)
-                .selectinload(DocumentLink.target)
-                .selectinload(Document.folder)
-            )
-            .options(
-                selectinload(Document.outgoing_links)
-                .selectinload(DocumentLink.link_type)
-            )
-            .options(
-                selectinload(Document.incoming_links)
-                .selectinload(DocumentLink.source)
-                .selectinload(Document.folder)
-            )
-            .options(
-                selectinload(Document.incoming_links)
-                .selectinload(DocumentLink.link_type)
-            )
-            .options(selectinload(Document.files))
-            .options(selectinload(Document.tags))
-            .filter(Document.id == document.id)
-            .one()
-        )
+        document = _document_query(session).filter(Document.id == document.id).one()
         return _document_to_dict(document)
 
 
@@ -1045,6 +1081,9 @@ def search_documents(
                 "id": document.id,
                 "folder_id": document.folder_id,
                 "folder_name": document.folder.name,
+                "name": document.name,
+                "date": document.date,
+                "type": document.type,
                 "rank": keyword_ranks.get(item_id),
                 "matched_by": matched_by,
                 "score": scores[item_id],
