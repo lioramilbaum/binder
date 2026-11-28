@@ -2,5 +2,13 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "local>lioramilbaum/renovate-config"
+  ],
+  "packageRules": [
+    {
+      "description": "Stay on PostgreSQL 18: a major upgrade needs a manual data migration and pgvector package change.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "allowedVersions": "<19"
+    }
   ]
 }

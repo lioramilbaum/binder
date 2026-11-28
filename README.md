@@ -482,8 +482,10 @@ pgvector extension, which the Postgres image built by `docker compose` includes.
 
 PostgreSQL's data folder is a local bind mount (`./.postgres-data`, git-ignored),
 not a Docker volume, so pruning Docker storage cannot delete it. The image is
-pinned to PostgreSQL 18.6 and mounted at `/var/lib/postgresql`; major-version
-upgrades require a database migration, not just changing the tag.
+on the PostgreSQL 18 line (`postgres:18.x` base image, tag `binder-postgres:18-pgvector`)
+and mounted at `/var/lib/postgresql`. Renovate is set not to propose
+PostgreSQL 19 or later, so that move is manual: base image, pgvector package,
+image tag, and a data migration.
 
 `make backup` writes a timestamped dump (`.private-backups/binder-YYYYmmdd-HHMMSS.dump`,
 readable only by you, git-ignored) and keeps the newest 30; change that with
